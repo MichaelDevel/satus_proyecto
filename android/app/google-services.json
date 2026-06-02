@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "7673820554",
+    "project_id": "satus-5da61",
+    "storage_bucket": "satus-5da61.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:7673820554:android:d446af648fa34a5cd50473",
+        "android_client_info": {
+          "package_name": "com.example.satus_proyecto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ77wXuPSq8cKIWOj1SRlq0aMZ1WzIftM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
