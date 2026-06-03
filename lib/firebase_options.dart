@@ -85,4 +85,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'satus-5da61.firebasestorage.app',
     measurementId: 'G-HGJ1FMRGF6',
   );
+
 }
