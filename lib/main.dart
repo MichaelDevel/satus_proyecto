@@ -2,6 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
+import 'screens/welcome_screen.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // ← obligatorio antes de Firebase
@@ -22,7 +24,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Satus Proyecto'),
+        home: const WelcomeScreen(),
     );
   }
 }
