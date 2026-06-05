@@ -189,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
           prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFF6B7280), size: 20),
           validator: (v) {
             if (v == null || v.isEmpty) return 'Ingresa tu contraseña';
-            if (v.length < 6) return 'Mínimo 6 caracteres';
+            if (v.length < 8) return 'Mínimo 8 caracteres';
             return null;
           },
         ).animate().fadeIn(delay: 450.ms, duration: 500.ms).slideX(begin: -0.1),

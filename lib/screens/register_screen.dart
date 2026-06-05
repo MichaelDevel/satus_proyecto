@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -59,21 +60,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
+    // 1️⃣ Crear usuario en Firebase Auth
     final result = await _authService.registerWithEmail(
       email: _emailCtrl.text,
       password: _passwordCtrl.text,
     );
 
     if (!mounted) return;
+
+    if (!result.isSuccess) {
+      setState(() => _isLoading = false);
+      _showError(result.error!);
+      return;
+    }
+
+    // 2️⃣ Guardar datos extra en Firestore
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(result.user!.uid)
+          .set({
+        'uid': result.user!.uid,
+        'email': _emailCtrl.text.trim(),
+        'nombre': _nameCtrl.text.trim(),
+        'nickname': _nicknameCtrl.text.trim(),
+        'edad': int.parse(_ageCtrl.text.trim()),
+        'genero': _selectedGender,
+        'pais': _selectedCountry,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // El usuario se creó en Auth pero falló Firestore — informar sin bloquear
+      if (mounted) _showError('Cuenta creada, pero no se guardaron todos los datos. ($e)');
+    }
+
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (result.isSuccess) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => HomeScreen(user: result.user!)),
-      );
-    } else {
-      _showError(result.error!);
-    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => HomeScreen(user: result.user!)),
+    );
   }
 
   void _showError(String msg) {
