@@ -9,6 +9,7 @@ import 'adds/add_reminder_screen.dart';
 import 'adds/add_task_screen.dart';
 import 'login_screen.dart';
 import '../services/auth_service.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -29,13 +30,37 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isListening = false;
   String _voiceText = 'Toca el micrófono para hablar...';
   late AnimationController _pulseCtrl;
-
+  final SpeechToText _speech = SpeechToText();
+  bool _speechAvailable = false;
   @override
   void initState() {
     super.initState();
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
+    );
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          if (mounted) setState(() {
+            _isListening = false;
+            _pulseCtrl.stop();
+            _pulseCtrl.reset();
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) setState(() {
+          _isListening = false;
+          _voiceText = 'Error: ${error.errorMsg}';
+          _pulseCtrl.stop();
+          _pulseCtrl.reset();
+        });
+      },
     );
   }
 
@@ -45,19 +70,43 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  void _toggleListening() {
-    setState(() {
-      _isListening = !_isListening;
-      if (_isListening) {
-        _voiceText = 'Escuchando...';
-        _pulseCtrl.repeat(reverse: true);
-      } else {
+  void _toggleListening() async {
+    if (!_speechAvailable) {
+      setState(() => _voiceText = 'Micrófono no disponible.');
+      return;
+    }
+
+    if (_isListening) {
+      // Detener
+      await _speech.stop();
+      setState(() {
+        _isListening = false;
         _voiceText = 'Toca el micrófono para hablar...';
         _pulseCtrl.stop();
         _pulseCtrl.reset();
-      }
-    });
-    // TODO: conectar speech_to_text cuando lo necesites
+      });
+    } else {
+      // Iniciar en español
+      setState(() {
+        _isListening = true;
+        _voiceText = 'Escuchando...';
+        _pulseCtrl.repeat(reverse: true);
+      });
+
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _voiceText = result.recognizedWords.isNotEmpty
+                ? result.recognizedWords
+                : 'Escuchando...';
+          });
+        },
+        localeId: 'es_CO',   // español Colombia
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+        listenMode: ListenMode.confirmation,
+      );
+    }
   }
 
   // ── Definición de secciones ──────────────────────────────────────────────────
@@ -265,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Resumen rápido ────────────────────────────────────────────────────────────
+  // ── Resumen rápido ────────────────────────────────────────────────────────────s
   Widget _buildSummaryRow() {
     return Row(
       children: [
