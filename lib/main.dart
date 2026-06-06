@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'screens/home_screen.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/welcome_screen.dart';
@@ -24,7 +26,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-        home: const WelcomeScreen(),
+        home: FirebaseAuth.instance.currentUser != null
+            ? HomeScreen(user: FirebaseAuth.instance.currentUser!)
+            : const WelcomeScreen(),
     );
   }
 }

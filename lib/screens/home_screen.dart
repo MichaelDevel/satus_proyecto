@@ -4,6 +4,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import 'adds/add_habit_screen.dart';
+import 'adds/add_reminder_screen.dart';
+import 'adds/add_task_screen.dart';
 import 'login_screen.dart';
 import '../services/auth_service.dart';
 
@@ -321,17 +324,21 @@ class _SectionCardState extends State<_SectionCard> {
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
       onTap: () {
-        // TODO: Navigator.push a la pantalla correspondiente según d.tag
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ir a ${d.label}', style: GoogleFonts.sora(color: Colors.white)),
-            backgroundColor: d.gradient.first,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(16),
-            duration: const Duration(seconds: 1),
-          ),
-        );
+        Widget screen;
+        switch (d.tag) {
+          case 'tasks':
+            screen = const AddTaskScreen();
+            break;
+          case 'habits':
+            screen = const AddHabitScreen();
+            break;
+          case 'reminders':
+            screen = const AddReminderScreen();
+            break;
+          default:
+            return;
+        }
+        Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
       },
       child: AnimatedScale(
         scale: _pressed ? 0.97 : 1.0,
