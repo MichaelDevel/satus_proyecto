@@ -10,6 +10,7 @@ import 'adds/add_task_screen.dart';
 import 'login_screen.dart';
 import '../services/auth_service.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -316,17 +317,34 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Resumen rápido ────────────────────────────────────────────────────────────s
   Widget _buildSummaryRow() {
-    return Row(
-      children: [
-        _StatChip(label: 'Tareas', value: '0', color: const Color(0xFF6366F1)),
-        const Gap(12),
-        _StatChip(label: 'Hábitos', value: '0', color: const Color(0xFF10B981)),
-        const Gap(12),
-        _StatChip(label: 'Alertas', value: '0', color: const Color(0xFFF59E0B)),
-      ],
+    final uid = widget.user.uid;
+    final db = FirebaseFirestore.instance;
+
+    return StreamBuilder<List<int>>(
+      stream: Stream.periodic(const Duration(seconds: 1)).asyncMap((_) async {
+        final results = await Future.wait([
+          db.collection('users').doc(uid).collection('tasks')
+              .where('completed', isEqualTo: false).get(),
+          db.collection('users').doc(uid).collection('habits').get(),
+          db.collection('users').doc(uid).collection('reminders')
+              .where('active', isEqualTo: true).get(),
+        ]);
+        return results.map((r) => r.docs.length).toList();
+      }),
+      builder: (context, snapshot) {
+        final counts = snapshot.data ?? [0, 0, 0];
+        return Row(
+          children: [
+            _StatChip(label: 'Tareas', value: '${counts[0]}', color: const Color(0xFF6366F1)),
+            const Gap(12),
+            _StatChip(label: 'Hábitos', value: '${counts[1]}', color: const Color(0xFF10B981)),
+            const Gap(12),
+            _StatChip(label: 'Alertas', value: '${counts[2]}', color: const Color(0xFFF59E0B)),
+          ],
+        );
+      },
     ).animate().fadeIn(delay: 700.ms, duration: 500.ms).slideY(begin: 0.2);
   }
-
   // ── Botón cerrar sesión ───────────────────────────────────────────────────────
   Widget _buildSignOutButton() {
     return SizedBox(
