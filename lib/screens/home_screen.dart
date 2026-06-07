@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
+import 'package:satus_proyecto/screens/habit_detail_screen.dart';
+import 'package:satus_proyecto/screens/reminder_detail_screen.dart';
+import 'package:satus_proyecto/screens/task_detail_screen.dart';
 
 import 'adds/add_habit_screen.dart';
 import 'adds/add_reminder_screen.dart';
@@ -207,57 +210,65 @@ class _HomeScreenState extends State<HomeScreen>
     final priorityColors = {'Alta': const Color(0xFFEF4444), 'Media': const Color(0xFFF59E0B), 'Baja': const Color(0xFF10B981)};
     final color = priorityColors[priority] ?? const Color(0xFFF59E0B);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () async {
-              await FirebaseFirestore.instance
-                  .collection('users').doc(widget.user.uid).collection('tasks').doc(id)
-                  .update({'completed': !completed});
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 24, height: 24,
-              decoration: BoxDecoration(
-                color: completed ? _accent : Colors.transparent,
-                shape: BoxShape.circle,
-                border: Border.all(color: completed ? _accent : const Color(0xFF4B5563), width: 2),
+
+    return
+      GestureDetector(
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => TaskDetailScreen(taskId: id, data: data),
+        )),
+        child:
+        Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () async {
+                await FirebaseFirestore.instance
+                    .collection('users').doc(widget.user.uid).collection('tasks').doc(id)
+                    .update({'completed': !completed});
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 24, height: 24,
+                decoration: BoxDecoration(
+                  color: completed ? _accent : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: completed ? _accent : const Color(0xFF4B5563), width: 2),
+                ),
+                child: completed ? const Icon(Icons.check_rounded, color: Colors.white, size: 14) : null,
               ),
-              child: completed ? const Icon(Icons.check_rounded, color: Colors.white, size: 14) : null,
             ),
-          ),
-          const Gap(14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(data['title'] ?? '', style: GoogleFonts.sora(
-                  fontSize: 15, fontWeight: FontWeight.w600,
-                  color: completed ? const Color(0xFF4B5563) : Colors.white,
-                  decoration: completed ? TextDecoration.lineThrough : null,
-                )),
-                if ((data['description'] ?? '').isNotEmpty) ...[
-                  const Gap(3),
-                  Text(data['description'], style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+            const Gap(14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data['title'] ?? '', style: GoogleFonts.sora(
+                    fontSize: 15, fontWeight: FontWeight.w600,
+                    color: completed ? const Color(0xFF4B5563) : Colors.white,
+                    decoration: completed ? TextDecoration.lineThrough : null,
+                  )),
+                  if ((data['description'] ?? '').isNotEmpty) ...[
+                    const Gap(3),
+                    Text(data['description'], style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const Gap(8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-            child: Text(priority, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-          ),
-        ],
+            const Gap(8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+              child: Text(priority, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -267,46 +278,53 @@ class _HomeScreenState extends State<HomeScreen>
     final icon = data['icon'] ?? '💪';
     final frequency = data['frequency'] ?? 'Diario';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
-            ),
-            child: Center(child: Text(icon, style: const TextStyle(fontSize: 22))),
+    return
+      GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => HabitDetailScreen(habitId: id, data: data),
+          )),
+          child:
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
           ),
-          const Gap(14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-                const Gap(3),
-                Text(frequency, style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
-              ],
-            ),
-          ),
-          const Gap(8),
-          Column(
+          child: Row(
             children: [
-              Text('$streak', style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700, color: const Color(0xFF10B981))),
-              Text('racha', style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF6B7280))),
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+                ),
+                child: Center(child: Text(icon, style: const TextStyle(fontSize: 22))),
+              ),
+              const Gap(14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                    const Gap(3),
+                    Text(frequency, style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+                  ],
+                ),
+              ),
+              const Gap(8),
+              Column(
+                children: [
+                  Text('$streak', style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700, color: const Color(0xFF10B981))),
+                  Text('racha', style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF6B7280))),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
-    );
+        ),
+      );
   }
 
   Widget _buildReminderItem(Map<String, dynamic> data, String id) {
@@ -317,67 +335,74 @@ class _HomeScreenState extends State<HomeScreen>
         ? '${dt.day}/${dt.month}/${dt.year} • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
         : '';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: active ? const Color(0xFFF59E0B).withOpacity(0.3) : const Color(0xFF1F2937),
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF59E0B).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3), width: 1.5),
-            ),
-            child: const Icon(Icons.notifications_none_rounded, color: Color(0xFFF59E0B), size: 22),
-          ),
-          const Gap(14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-                const Gap(3),
-                Text(dateStr.isNotEmpty ? '$dateStr  •  $repeat' : repeat,
-                    style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
-              ],
+    return
+      GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ReminderDetailScreen(reminderId: id, data: data),
+          )),
+            child:
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: active ? const Color(0xFFF59E0B).withOpacity(0.3) : const Color(0xFF1F2937),
+              width: 1.5,
             ),
           ),
-          const Gap(8),
-          GestureDetector(
-            onTap: () async {
-              await FirebaseFirestore.instance
-                  .collection('users').doc(widget.user.uid).collection('reminders').doc(id)
-                  .update({'active': !active});
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 36, height: 20,
-              decoration: BoxDecoration(
-                color: active ? const Color(0xFFF59E0B) : const Color(0xFF1F2937),
-                borderRadius: BorderRadius.circular(10),
+          child: Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3), width: 1.5),
+                ),
+                child: const Icon(Icons.notifications_none_rounded, color: Color(0xFFF59E0B), size: 22),
               ),
-              child: AnimatedAlign(
-                duration: const Duration(milliseconds: 200),
-                alignment: active ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 16, height: 16,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+              const Gap(14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                    const Gap(3),
+                    Text(dateStr.isNotEmpty ? '$dateStr  •  $repeat' : repeat,
+                        style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+                  ],
                 ),
               ),
-            ),
+              const Gap(8),
+              GestureDetector(
+                onTap: () async {
+                  await FirebaseFirestore.instance
+                      .collection('users').doc(widget.user.uid).collection('reminders').doc(id)
+                      .update({'active': !active});
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 36, height: 20,
+                  decoration: BoxDecoration(
+                    color: active ? const Color(0xFFF59E0B) : const Color(0xFF1F2937),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: AnimatedAlign(
+                    duration: const Duration(milliseconds: 200),
+                    alignment: active ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      width: 16, height: 16,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
     );
   }
 
