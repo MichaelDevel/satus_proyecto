@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _pulseCtrl;
   final SpeechToText _speech = SpeechToText();
   bool _speechAvailable = false;
+  int _selectedTab = 0;
   @override
   void initState() {
     super.initState();
@@ -110,6 +111,297 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Widget _buildTabBar() {
+    final tabs = [
+      (Icons.home_rounded, 'Inicio'),
+      (Icons.check_circle_outline_rounded, 'Tareas'),
+      (Icons.loop_rounded, 'Hábitos'),
+      (Icons.notifications_none_rounded, 'Alertas'),
+    ];
+    final colors = [_accent, const Color(0xFF6366F1), const Color(0xFF10B981), const Color(0xFFF59E0B)];
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (i) {
+          final selected = _selectedTab == i;
+          final color = colors[i];
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedTab = i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: selected ? color.withOpacity(0.15) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Icon(tabs[i].$1, color: selected ? color : const Color(0xFF4B5563), size: 20),
+                    const Gap(4),
+                    Text(tabs[i].$2, style: GoogleFonts.sora(
+                      fontSize: 10,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                      color: selected ? color : const Color(0xFF4B5563),
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildListTab({
+    required String collection,
+    required Color color,
+    required IconData icon,
+    required String emptyMsg,
+    required Widget Function(Map<String, dynamic>, String) itemBuilder,
+  }) {
+    final uid = widget.user.uid;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users').doc(uid).collection(collection)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator(color: color, strokeWidth: 2));
+        }
+        final docs = snap.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: color.withOpacity(0.3), size: 56),
+                const Gap(16),
+                Text(emptyMsg, style: GoogleFonts.sora(color: const Color(0xFF4B5563), fontSize: 15)),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: docs.length,
+          itemBuilder: (_, i) => itemBuilder(docs[i].data() as Map<String, dynamic>, docs[i].id),
+        );
+      },
+    );
+  }
+
+  Widget _buildTaskItem(Map<String, dynamic> data, String id) {
+    final completed = data['completed'] ?? false;
+    final priority = data['priority'] ?? 'Media';
+    final priorityColors = {'Alta': const Color(0xFFEF4444), 'Media': const Color(0xFFF59E0B), 'Baja': const Color(0xFF10B981)};
+    final color = priorityColors[priority] ?? const Color(0xFFF59E0B);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () async {
+              await FirebaseFirestore.instance
+                  .collection('users').doc(widget.user.uid).collection('tasks').doc(id)
+                  .update({'completed': !completed});
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 24, height: 24,
+              decoration: BoxDecoration(
+                color: completed ? _accent : Colors.transparent,
+                shape: BoxShape.circle,
+                border: Border.all(color: completed ? _accent : const Color(0xFF4B5563), width: 2),
+              ),
+              child: completed ? const Icon(Icons.check_rounded, color: Colors.white, size: 14) : null,
+            ),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['title'] ?? '', style: GoogleFonts.sora(
+                  fontSize: 15, fontWeight: FontWeight.w600,
+                  color: completed ? const Color(0xFF4B5563) : Colors.white,
+                  decoration: completed ? TextDecoration.lineThrough : null,
+                )),
+                if ((data['description'] ?? '').isNotEmpty) ...[
+                  const Gap(3),
+                  Text(data['description'], style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+                ],
+              ],
+            ),
+          ),
+          const Gap(8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+            child: Text(priority, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHabitItem(Map<String, dynamic> data, String id) {
+    final streak = data['streak'] ?? 0;
+    final icon = data['icon'] ?? '💪';
+    final frequency = data['frequency'] ?? 'Diario';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+            ),
+            child: Center(child: Text(icon, style: const TextStyle(fontSize: 22))),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                const Gap(3),
+                Text(frequency, style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+              ],
+            ),
+          ),
+          const Gap(8),
+          Column(
+            children: [
+              Text('$streak', style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700, color: const Color(0xFF10B981))),
+              Text('racha', style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF6B7280))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReminderItem(Map<String, dynamic> data, String id) {
+    final dt = (data['dateTime'] as Timestamp?)?.toDate();
+    final repeat = data['repeat'] ?? 'No repetir';
+    final active = data['active'] ?? true;
+    final dateStr = dt != null
+        ? '${dt.day}/${dt.month}/${dt.year} • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+        : '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: active ? const Color(0xFFF59E0B).withOpacity(0.3) : const Color(0xFF1F2937),
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3), width: 1.5),
+            ),
+            child: const Icon(Icons.notifications_none_rounded, color: Color(0xFFF59E0B), size: 22),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                const Gap(3),
+                Text(dateStr.isNotEmpty ? '$dateStr  •  $repeat' : repeat,
+                    style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+              ],
+            ),
+          ),
+          const Gap(8),
+          GestureDetector(
+            onTap: () async {
+              await FirebaseFirestore.instance
+                  .collection('users').doc(widget.user.uid).collection('reminders').doc(id)
+                  .update({'active': !active});
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 36, height: 20,
+              decoration: BoxDecoration(
+                color: active ? const Color(0xFFF59E0B) : const Color(0xFF1F2937),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: active ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 16, height: 16,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFAB() {
+    final screens = [null, const AddTaskScreen(), const AddHabitScreen(), const AddReminderScreen()];
+    final colors = [_accent, const Color(0xFF6366F1), const Color(0xFF10B981), const Color(0xFFF59E0B)];
+    final screen = screens[_selectedTab];
+    if (screen == null) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [colors[_selectedTab], colors[_selectedTab].withOpacity(0.7)]),
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: colors[_selectedTab].withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: FloatingActionButton(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+      ),
+    );
+  }
+
   // ── Definición de secciones ──────────────────────────────────────────────────
   final List<_SectionData> _sections = const [
     _SectionData(
@@ -140,53 +432,62 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.user.email?.split('@').first ?? 'Usuario';
-
     return Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
-          // Fondo decorativo
           Positioned.fill(child: CustomPaint(painter: _BgPainter())),
-
           SafeArea(
             child: Column(
               children: [
-                // ── Barra de voz superior ──────────────────────────────────
                 _buildVoiceBar(),
-
-                // ── Contenido scrollable ───────────────────────────────────
+                const Gap(8),
+                _buildTabBar(),
                 Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Gap(32),
-                        _buildGreeting(displayName),
-                        const Gap(36),
-                        _buildSectionLabel('¿Qué quieres hacer?'),
-                        const Gap(20),
-                        _buildCards(),
-                        const Gap(36),
-                        _buildSectionLabel('Resumen de hoy'),
-                        const Gap(16),
-                        _buildSummaryRow(),
-                        const Gap(32),
-                        _buildSignOutButton(),
-                        const Gap(32),
-                      ],
-                    ),
-                  ),
+                  child: _selectedTab == 0
+                      ? _buildHomeContent()
+                      : _selectedTab == 1
+                      ? _buildListTab(collection: 'tasks', color: const Color(0xFF6366F1), icon: Icons.check_circle_outline_rounded, emptyMsg: 'No tienes tareas pendientes.', itemBuilder: _buildTaskItem)
+                      : _selectedTab == 2
+                      ? _buildListTab(collection: 'habits', color: const Color(0xFF10B981), icon: Icons.loop_rounded, emptyMsg: 'No tienes hábitos registrados.', itemBuilder: _buildHabitItem)
+                      : _buildListTab(collection: 'reminders', color: const Color(0xFFF59E0B), icon: Icons.notifications_none_rounded, emptyMsg: 'No tienes recordatorios activos.', itemBuilder: _buildReminderItem),
                 ),
               ],
             ),
           ),
         ],
       ),
+      floatingActionButton: _selectedTab != 0 ? _buildFAB() : null,
     );
   }
+
+  Widget _buildHomeContent() {
+    final displayName = widget.user.email?.split('@').first ?? 'Usuario';
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Gap(32),
+          _buildGreeting(displayName),
+          const Gap(36),
+          _buildSectionLabel('¿Qué quieres hacer?'),
+          const Gap(20),
+          _buildCards(),
+          const Gap(36),
+          _buildSectionLabel('Resumen de hoy'),
+          const Gap(16),
+          _buildSummaryRow(),
+          const Gap(32),
+          _buildSignOutButton(),
+          const Gap(32),
+        ],
+      ),
+    );
+  }
+
+
 
   // ── Barra de voz ─────────────────────────────────────────────────────────────
   Widget _buildVoiceBar() {
