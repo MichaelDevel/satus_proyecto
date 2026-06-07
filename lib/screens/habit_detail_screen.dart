@@ -93,23 +93,32 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
   }
 
   Future<void> _markToday() async {
-    final today = DateTime.now();
-    final dateStr = '${today.year}-${today.month}-${today.day}';
-    final List completedDates = List.from(widget.data['completedDates'] ?? []);
-    final alreadyDone = completedDates.contains(dateStr);
+    setState(() => _isLoading = true);
+    try {
+      final today = DateTime.now();
+      final dateStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
-    if (alreadyDone) {
-      completedDates.remove(dateStr);
-    } else {
-      completedDates.add(dateStr);
+      // Leer datos actuales de Firestore en lugar de widget.data
+      final snap = await _col.doc(widget.habitId).get();
+      final data = snap.data() as Map<String, dynamic>;
+      final List dates = List.from(data['completedDates'] ?? []);
+
+      if (dates.contains(dateStr)) {
+        dates.remove(dateStr);
+      } else {
+        dates.add(dateStr);
+      }
+
+      final streak = _calculateStreak(dates);
+      await _col.doc(widget.habitId).update({
+        'completedDates': dates,
+        'streak': streak,
+      });
+    } catch (e) {
+      if (mounted) _showError('Error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    final streak = _calculateStreak(completedDates);
-    await _col.doc(widget.habitId).update({
-      'completedDates': completedDates,
-      'streak': streak,
-    });
-    if (mounted) Navigator.of(context).pop();
   }
 
   int _calculateStreak(List dates) {
@@ -161,55 +170,68 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final streak = widget.data['streak'] ?? 0;
-    final completedDates = List.from(widget.data['completedDates'] ?? []);
-    final today = DateTime.now();
-    final todayStr = '${today.year}-${today.month}-${today.day}';
-    final doneToday = completedDates.contains(todayStr);
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _col.doc(widget.habitId).snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const Scaffold(
+          backgroundColor: Color(0xFF060A12),
+          body: Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
+        );
 
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _BgPainter(_accent))),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildAppBar(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildStreakCard(streak, doneToday).animate().fadeIn(delay: 150.ms),
-                          const Gap(24),
-                          _buildIconPicker().animate().fadeIn(delay: 200.ms),
-                          const Gap(16),
-                          _buildField(label: 'NOMBRE', controller: _titleCtrl, enabled: _editing,
-                              validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null),
-                          const Gap(16),
-                          _buildField(label: 'DESCRIPCIÓN', controller: _descCtrl, enabled: _editing, maxLines: 3),
-                          const Gap(16),
-                          _buildFrequencySelector().animate().fadeIn(delay: 400.ms),
-                          const Gap(16),
-                          if (_frequency != 'Mensual') _buildDaySelector().animate().fadeIn(delay: 500.ms),
-                          const Gap(32),
-                          _buildActions(doneToday).animate().fadeIn(delay: 600.ms),
-                          const Gap(24),
-                        ],
+        final data = snap.data!.data() as Map<String, dynamic>;
+        final streak = data['streak'] ?? 0;
+        final completedDates = List.from(data['completedDates'] ?? []);
+        final today = DateTime.now();
+        final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+        final doneToday = completedDates.contains(todayStr);
+
+        return Scaffold(
+          backgroundColor: _bg,
+          body: Stack(
+            children: [
+              Positioned.fill(child: CustomPaint(painter: _BgPainter(_accent))),
+              SafeArea(
+                child: Column(
+                  children: [
+                    _buildAppBar(),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.all(24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildStreakCard(streak, doneToday, data).animate().fadeIn(delay: 150.ms),
+                              const Gap(24),
+                              _buildCalendar(completedDates).animate().fadeIn(delay: 200.ms),
+                              const Gap(20),
+                              _buildIconPicker().animate().fadeIn(delay: 250.ms),
+                              const Gap(16),
+                              _buildField(label: 'NOMBRE', controller: _titleCtrl, enabled: _editing,
+                                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null),
+                              const Gap(16),
+                              _buildField(label: 'DESCRIPCIÓN', controller: _descCtrl, enabled: _editing, maxLines: 3),
+                              const Gap(16),
+                              _buildFrequencySelector().animate().fadeIn(delay: 400.ms),
+                              const Gap(16),
+                              if (_frequency != 'Mensual') _buildDaySelector().animate().fadeIn(delay: 500.ms),
+                              const Gap(32),
+                              _buildActions(doneToday, completedDates).animate().fadeIn(delay: 600.ms),
+                              const Gap(24),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -243,7 +265,103 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
     );
   }
 
-  Widget _buildStreakCard(int streak, bool doneToday) {
+  Widget _buildCalendar(List completedDates) {
+    final now = DateTime.now();
+    final daysInMonth = DateUtils.getDaysInMonth(now.year, now.month);
+    final firstDay = DateTime(now.year, now.month, 1);
+    final startWeekday = firstDay.weekday - 1; // 0=Lunes
+
+    final completedSet = completedDates.map((d) => d.toString()).toSet();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('HISTORIAL — ${_monthName(now.month).toUpperCase()} ${now.year}',
+            style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        const Gap(12),
+        // Encabezado días semana
+        Row(
+          children: ['L','M','X','J','V','S','D'].map((d) => Expanded(
+            child: Center(child: Text(d, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF4B5563)))),
+          )).toList(),
+        ),
+        const Gap(8),
+        // Grid de días
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 6, crossAxisSpacing: 6),
+          itemCount: startWeekday + daysInMonth,
+          itemBuilder: (_, i) {
+            if (i < startWeekday) return const SizedBox.shrink();
+            final day = i - startWeekday + 1;
+            final date = DateTime(now.year, now.month, day);
+            final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+            final done = completedSet.contains(dateStr);
+            final isToday = day == now.day;
+            final isFuture = date.isAfter(now);
+
+            return GestureDetector(
+              onTap: isFuture ? null : () => _toggleDate(dateStr, done),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: done
+                      ? _accent
+                      : isToday
+                      ? _accent.withOpacity(0.2)
+                      : const Color(0xFF0D1117),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isToday ? _accent : done ? _accent : const Color(0xFF1F2937),
+                    width: isToday ? 1.5 : 1,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$day',
+                    style: GoogleFonts.sora(
+                      fontSize: 12,
+                      fontWeight: isToday || done ? FontWeight.w700 : FontWeight.w400,
+                      color: done ? Colors.white : isFuture ? const Color(0xFF2D3748) : isToday ? _accent : const Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  String _monthName(int month) {
+    const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return months[month - 1];
+  }
+
+  Future<void> _toggleDate(String dateStr, bool currentlyDone) async {
+    final snap = await _col.doc(widget.habitId).get();
+    final data = snap.data() as Map<String, dynamic>;
+    final List dates = List.from(data['completedDates'] ?? []);
+
+    if (currentlyDone) {
+      dates.remove(dateStr);
+    } else {
+      dates.add(dateStr);
+    }
+
+    final streak = _calculateStreak(dates);
+    await _col.doc(widget.habitId).update({
+      'completedDates': dates,
+      'streak': streak,
+    });
+  }
+
+  Widget _buildStreakCard(int streak, bool doneToday, Map<String, dynamic> data) {
+    final completedDates = List.from(data['completedDates'] ?? []);
+    final totalDays = completedDates.length;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -251,37 +369,71 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _accent.withOpacity(0.3), width: 1.5),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Text(_selectedIcon, style: const TextStyle(fontSize: 40)),
-          const Gap(20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Racha actual', style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF9CA3AF))),
-                Row(
+          Row(
+            children: [
+              Text(_selectedIcon, style: const TextStyle(fontSize: 36)),
+              const Gap(16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$streak', style: GoogleFonts.sora(fontSize: 36, fontWeight: FontWeight.w800, color: _accent)),
-                    const Gap(6),
-                    Text('días', style: GoogleFonts.sora(fontSize: 16, color: _accent.withOpacity(0.7))),
+                    Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                    Text(data['frequency'] ?? 'Diario', style: GoogleFonts.sora(fontSize: 13, color: const Color(0xFF9CA3AF))),
                   ],
                 ),
-              ],
-            ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: doneToday ? _accent.withOpacity(0.2) : const Color(0xFF1F2937),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: doneToday ? _accent : const Color(0xFF2D3748), width: 1.5),
+                ),
+                child: Text(doneToday ? '✓ Hoy' : 'Hoy',
+                    style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600,
+                        color: doneToday ? _accent : const Color(0xFF6B7280))),
+              ),
+            ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: doneToday ? _accent.withOpacity(0.2) : const Color(0xFF1F2937),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: doneToday ? _accent : const Color(0xFF2D3748), width: 1.5),
-            ),
-            child: Text(doneToday ? '✓ Hoy' : 'Hoy',
-                style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600,
-                    color: doneToday ? _accent : const Color(0xFF6B7280))),
+          const Gap(16),
+          Row(
+            children: [
+              _streakStat('$streak', 'Racha', Icons.local_fire_department_rounded, const Color(0xFFF59E0B)),
+              const Gap(12),
+              _streakStat('$totalDays', 'Total días', Icons.calendar_today_rounded, _accent),
+              const Gap(12),
+              _streakStat(
+                streak > 0 ? '${((totalDays / (DateTime.now().difference(DateTime.now().subtract(Duration(days: 30))).inDays + 1)) * 100).round()}%' : '0%',
+                'Este mes',
+                Icons.trending_up_rounded,
+                const Color(0xFF6366F1),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _streakStat(String value, String label, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2), width: 1),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const Gap(4),
+            Text(value, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
+            Text(label, style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF6B7280))),
+          ],
+        ),
       ),
     );
   }
@@ -406,21 +558,31 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
     );
   }
 
-  Widget _buildActions(bool doneToday) {
+  Widget _buildActions(bool doneToday, List completedDates) {
     return Column(
       children: [
         SizedBox(
           width: double.infinity, height: 52,
-          child: OutlinedButton.icon(
-            onPressed: _isLoading ? null : _markToday,
-            icon: Icon(doneToday ? Icons.undo_rounded : Icons.check_rounded,
-                color: doneToday ? const Color(0xFF9CA3AF) : _accent, size: 18),
-            label: Text(doneToday ? 'Desmarcar hoy' : 'Marcar como hecho hoy',
-                style: GoogleFonts.sora(color: doneToday ? const Color(0xFF9CA3AF) : _accent,
-                    fontSize: 14, fontWeight: FontWeight.w500)),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: doneToday ? const Color(0xFF1F2937) : _accent.withOpacity(0.4), width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: doneToday
+                    ? [const Color(0xFF1F2937), const Color(0xFF1F2937)]
+                    : [_accent, const Color(0xFF059669)],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: doneToday ? [] : [BoxShadow(color: _accent.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
+            ),
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : _markToday,
+              icon: Icon(doneToday ? Icons.undo_rounded : Icons.check_rounded, color: Colors.white, size: 18),
+              label: Text(doneToday ? 'Desmarcar hoy' : '¡Completar hoy!',
+                  style: GoogleFonts.sora(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
           ),
         ),
