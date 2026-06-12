@@ -44,6 +44,7 @@ dependencies:
   flutter_local_notifications: ^18.0.0
   timezone: ^0.9.4
   workmanager: ^0.6.0
+  flutter_launcher_icons: ^0.14.1
 
 dev_dependencies:
   flutter_test:
@@ -97,3 +98,8 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/logo_satus_512.png"  # ruta a tu logo
+  min_sdk_android: 21
