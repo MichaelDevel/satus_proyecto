@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import '../../services/notification_service.dart';
+
 class AddReminderScreen extends StatefulWidget {
   const AddReminderScreen({super.key});
 
@@ -92,7 +94,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
         _reminderTime!.hour, _reminderTime!.minute,
       );
 
-      await FirebaseFirestore.instance
+      final docRef = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('reminders')
@@ -106,6 +108,18 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      await NotificationService().scheduleReminder(
+        id: docRef.id.hashCode.abs(),
+        title: _titleCtrl.text.trim(),
+        body: _noteCtrl.text.trim().isNotEmpty ? _noteCtrl.text.trim() : 'Tienes un recordatorio',
+        dateTime: dateTime,
+        repeat: _repeat,
+      );
+      print('📅 Fecha seleccionada: $_reminderDate');
+      print('⏰ Hora seleccionada: $_reminderTime');
+      print('🗓️ DateTime combinado: $dateTime');
+      print('🌍 UTC: ${dateTime.toUtc()}');
+      print('⏱️ Diferencia con ahora: ${dateTime.difference(DateTime.now()).inSeconds} segundos');
       if (mounted) {
         _showSuccess('Recordatorio creado.');
         Navigator.of(context).pop();
@@ -115,6 +129,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(

@@ -6,7 +6,7 @@ import 'package:gap/gap.dart';
 import 'package:satus_proyecto/screens/habit_detail_screen.dart';
 import 'package:satus_proyecto/screens/reminder_detail_screen.dart';
 import 'package:satus_proyecto/screens/task_detail_screen.dart';
-
+import 'package:satus_proyecto/services/notification_service.dart';
 import 'adds/add_habit_screen.dart';
 import 'adds/add_reminder_screen.dart';
 import 'adds/add_task_screen.dart';
@@ -14,6 +14,7 @@ import 'login_screen.dart';
 import '../services/auth_service.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:workmanager/workmanager.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -45,6 +46,16 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 900),
     );
     _initSpeech();
+    Future.delayed(const Duration(seconds: 15), () async {
+      await NotificationService().init();
+      await NotificationService().testNotification(); // la que SÍ funcionó
+      Workmanager().registerOneOffTask(
+        'test_task',
+        'send_notification',
+        initialDelay: const Duration(seconds: 20),
+        inputData: {'id': 999, 'title': 'WorkManager', 'body': 'Funciona ✅'},
+      );
+    });
   }
 
   Future<void> _initSpeech() async {
@@ -561,8 +572,6 @@ class _HomeScreenState extends State<HomeScreen>
                     : const Color(0xFF6B7280),
                 fontWeight: _isListening ? FontWeight.w500 : FontWeight.w400,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
 
