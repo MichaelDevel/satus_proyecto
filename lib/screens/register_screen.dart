@@ -90,7 +90,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      // El usuario se creó en Auth pero falló Firestore — informar sin bloquear
       if (mounted) _showError('Cuenta creada, pero no se guardaron todos los datos. ($e)');
     }
 

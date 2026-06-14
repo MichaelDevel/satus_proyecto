@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import '../services/notification_service.dart';
+
 class ReminderDetailScreen extends StatefulWidget {
   final String reminderId;
   final Map<String, dynamic> data;
@@ -71,6 +73,7 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
       _showError('Selecciona fecha y hora.');
       return;
     }
+
     setState(() => _isLoading = true);
     try {
       final dt = DateTime(_reminderDate!.year, _reminderDate!.month, _reminderDate!.day,
@@ -83,6 +86,21 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
         'active': _active,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      if (!_active) {
+        await NotificationService().cancelReminder(
+          NotificationService().idFromDocId(widget.reminderId),
+        );
+      } else {
+        await NotificationService().scheduleReminder(
+          id: NotificationService().idFromDocId(widget.reminderId),
+          title: _titleCtrl.text.trim(),
+          body: _noteCtrl.text.trim(),
+          dateTime: dt,
+          repeat: _repeat,
+        );
+      }
+
       if (mounted) {
         setState(() => _editing = false);
         _showSuccess('Recordatorio actualizado.');
@@ -97,8 +115,14 @@ class _ReminderDetailScreenState extends State<ReminderDetailScreen> {
   Future<void> _delete() async {
     final confirm = await _confirmDialog('¿Eliminar recordatorio?', 'Esta acción no se puede deshacer.');
     if (!confirm) return;
+
     setState(() => _isLoading = true);
     try {
+      // Antes del delete:
+      await NotificationService().cancelReminder(
+        NotificationService().idFromDocId(widget.reminderId),
+      );
+      await _col.doc(widget.reminderId).delete();
       await _col.doc(widget.reminderId).delete();
       if (mounted) Navigator.of(context).pop();
     } catch (_) {

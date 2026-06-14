@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import '../services/notification_service.dart';
+
 class TaskDetailScreen extends StatefulWidget {
   final String taskId;
   final Map<String, dynamic> data;
@@ -83,7 +85,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (!confirm) return;
     setState(() => _isLoading = true);
     try {
+      await NotificationService().cancelTaskReminder(
+        NotificationService().idFromDocId(widget.taskId),
+      );
       await _col.doc(widget.taskId).delete();
+
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       _showError('Error al eliminar.');
@@ -93,6 +99,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   Future<void> _toggleComplete() async {
     final current = widget.data['completed'] ?? false;
+    if (!current) { // !current porque va a cambiar a completada
+      await NotificationService().cancelTaskReminder(
+        NotificationService().idFromDocId(widget.taskId),
+      );
+    }
     await _col.doc(widget.taskId).update({'completed': !current});
     if (mounted) Navigator.of(context).pop();
   }

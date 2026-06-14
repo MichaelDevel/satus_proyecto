@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import '../../services/notification_service.dart';
+
 class AddTaskScreen extends StatefulWidget {
   const AddTaskScreen({super.key});
 
@@ -65,7 +67,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      await FirebaseFirestore.instance
+    final docRef = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('tasks')
@@ -77,7 +79,13 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         'completed': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-
+      if (_dueDate != null) {
+        await NotificationService().scheduleTaskReminder(
+          id: docRef.id.hashCode.abs(),
+          title: _titleCtrl.text.trim(),
+          dueDate: _dueDate!,
+        );
+      }
       if (mounted) {
         _showSuccess('Tarea creada exitosamente.');
         Navigator.of(context).pop();

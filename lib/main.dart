@@ -1,17 +1,25 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:satus_proyecto/services/notification_service.dart';
 import 'screens/home_screen.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/welcome_screen.dart';
-
+import 'package:workmanager/workmanager.dart';
+import 'services/work_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // ← obligatorio antes de Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await NotificationService().init();
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: false,
+  );
+
   runApp(const MyApp());
 }
 
