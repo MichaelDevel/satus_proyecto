@@ -46,16 +46,6 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 900),
     );
     _initSpeech();
-    Future.delayed(const Duration(seconds: 15), () async {
-      await NotificationService().init();
-      await NotificationService().testNotification(); // la que SÍ funcionó
-      Workmanager().registerOneOffTask(
-        'test_task',
-        'send_notification',
-        initialDelay: const Duration(seconds: 20),
-        inputData: {'id': 999, 'title': 'WorkManager', 'body': 'Funciona ✅'},
-      );
-    });
   }
 
   Future<void> _initSpeech() async {
@@ -93,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     if (_isListening) {
-      // Detener
       await _speech.stop();
       setState(() {
         _isListening = false;
@@ -102,7 +91,6 @@ class _HomeScreenState extends State<HomeScreen>
         _pulseCtrl.reset();
       });
     } else {
-      // Iniciar en español
       setState(() {
         _isListening = true;
         _voiceText = 'Escuchando...';

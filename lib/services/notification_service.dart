@@ -43,12 +43,6 @@ class NotificationService {
     );
 
     await androidPlugin?.requestNotificationsPermission();
-/*
-    final canSchedule = await androidPlugin?.canScheduleExactNotifications();
-    if (canSchedule != true) {
-      await androidPlugin?.requestExactAlarmsPermission();
-    }
-*/
     _initialized = true;
   }
 
@@ -145,6 +139,140 @@ class NotificationService {
       UILocalNotificationDateInterpretation.absoluteTime,
     );
     print('⏰ Programada para: $scheduledDate');
+  }
+
+  Future<void> testTaskAndHabit() async {
+    final now = DateTime.now();
+
+    // Tarea en 30 segundos
+    await Workmanager().registerOneOffTask(
+      'test_task',
+      'send_notification',
+      initialDelay: const Duration(seconds: 30),
+      inputData: {
+        'id': 111,
+        'title': '📋 Prueba Tarea',
+        'body': 'Notificación de tarea funcionando ✅',
+      },
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+    );
+    print('✅ Tarea de prueba programada para 30 segundos');
+
+    // Hábito en 60 segundos
+    await Workmanager().registerOneOffTask(
+      'test_habit',
+      'send_notification',
+      initialDelay: const Duration(seconds: 60),
+      inputData: {
+        'id': 222,
+        'title': '💪 Prueba Hábito',
+        'body': 'Notificación de hábito funcionando ✅',
+      },
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+    );
+    print('✅ Hábito de prueba programado para 60 segundos');
+  }
+
+  // ── Notificación de tarea próxima ─────────────────────────────────────────
+  Future<void> scheduleTaskReminder({
+    required int id,
+    required String title,
+    required DateTime dueDate,
+  }) async {
+    await init();
+
+    final now = DateTime.now();
+
+    // Notificación el día anterior a las 9am
+    final dayBefore = DateTime(dueDate.year, dueDate.month, dueDate.day - 1, 9, 0);
+    // Notificación el mismo día a las 9am
+    final sameDay = DateTime(dueDate.year, dueDate.month, dueDate.day, 9, 0);
+    print('📋 Programando tarea: $title');
+    print('   Vence: $dueDate');
+    print('   Notif día anterior: $dayBefore — futura: ${dayBefore.isAfter(now)}');
+    print('   Notif mismo día: $sameDay — futura: ${sameDay.isAfter(now)}');
+
+    if (dayBefore.isAfter(now)) {
+      await Workmanager().registerOneOffTask(
+        'task_before_$id',
+        'send_notification',
+        initialDelay: dayBefore.difference(now),
+        inputData: {
+          'id': id,
+          'title': '📋 Tarea mañana',
+          'body': 'Mañana vence: $title',
+        },
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+      print('   ✅ Notif día anterior registrada');
+    }
+
+    if (sameDay.isAfter(now)) {
+      await Workmanager().registerOneOffTask(
+        'task_due_$id',
+        'send_notification',
+        initialDelay: sameDay.difference(now),
+        inputData: {
+          'id': id + 1,
+          'title': '⚠️ Tarea vence hoy',
+          'body': 'Vence hoy: $title',
+        },
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+      print('   ✅ Notif mismo día registrada');
+    }
+  }
+
+// ── Cancelar notificaciones de tarea ──────────────────────────────────────
+  Future<void> cancelTaskReminder(int id) async {
+    await _plugin.cancel(id);
+    await _plugin.cancel(id + 1);
+    await Workmanager().cancelByUniqueName('task_before_$id');
+    await Workmanager().cancelByUniqueName('task_due_$id');
+  }
+
+// ── Notificación diaria de hábito ─────────────────────────────────────────
+  Future<void> scheduleHabitReminder({
+    required int id,
+    required String title,
+    required String icon,
+    required int hour,
+    required int minute,
+  }) async {
+    await init();
+
+    final now = DateTime.now();
+    var scheduledTime = DateTime(now.year, now.month, now.day, hour, minute);
+
+    // Si ya pasó la hora hoy, programa para mañana
+    if (scheduledTime.isBefore(now)) {
+      scheduledTime = scheduledTime.add(const Duration(days: 1));
+    }
+
+    print('🔄 Programando hábito: $title');
+    print('   Hora: $hour:$minute');
+    print('   Primera notif: $scheduledTime');
+    print('   Delay: ${scheduledTime.difference(now).inMinutes} minutos');
+    await Workmanager().registerPeriodicTask(
+      'habit_$id',
+      'send_notification',
+      frequency: const Duration(hours: 24),
+      initialDelay: scheduledTime.difference(now),
+      inputData: {
+        'id': id,
+        'title': '$icon Hábito pendiente',
+        'body': 'No olvides: $title',
+      },
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(networkType: NetworkType.not_required),
+    );
+    print('   ✅ Hábito registrado en WorkManager');
+  }
+
+// ── Cancelar notificación de hábito ──────────────────────────────────────
+  Future<void> cancelHabitReminder(int id) async {
+    await _plugin.cancel(id);
+    await Workmanager().cancelByUniqueName('habit_$id');
   }
 
   // ── Cancelar recordatorio ─────────────────────────────────────────────────

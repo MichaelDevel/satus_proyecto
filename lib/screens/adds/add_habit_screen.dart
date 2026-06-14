@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 
+import '../../services/notification_service.dart';
+
 class AddHabitScreen extends StatefulWidget {
   const AddHabitScreen({super.key});
 
@@ -30,6 +32,7 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
 
   final List<String> _days = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
   final Set<int> _selectedDays = {0, 1, 2, 3, 4};
+  TimeOfDay _notifTime = const TimeOfDay(hour: 8, minute: 0);
 
   @override
   void dispose() {
@@ -44,7 +47,7 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
 
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      await FirebaseFirestore.instance
+      final docRef = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('habits')
@@ -57,15 +60,25 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
         'streak': 0,
         'completedDates': [],
         'active': true,
+        'notifHour': _notifTime.hour,
+        'notifMinute': _notifTime.minute,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      await NotificationService().scheduleHabitReminder(
+        id: docRef.id.hashCode.abs(),
+        title: _titleCtrl.text.trim(),
+        icon: _selectedIcon,
+        hour: _notifTime.hour,
+        minute: _notifTime.minute,
+      );
 
       if (mounted) {
         _showSuccess('Hábito creado exitosamente.');
         Navigator.of(context).pop();
       }
     } catch (e) {
-      if (mounted) _showError('Error al guardar el hábito.');
+      if (mounted) _showError('Error al guardar el hábito: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -138,6 +151,12 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
                           if (_frequency == 'Diario' || _frequency == 'Semanal')
                             _buildDaySelector()
                                 .animate().fadeIn(delay: 600.ms, duration: 500.ms).slideX(begin: -0.1),
+
+                          const Gap(40),
+                          _buildTimePicker()
+                              .animate().fadeIn(delay: 650.ms, duration: 500.ms).slideX(begin: -0.1),
+                          const Gap(20),
+
                           const Gap(40),
                           _buildSaveButton()
                               .animate().fadeIn(delay: 700.ms, duration: 500.ms).slideY(begin: 0.3),
@@ -338,6 +357,52 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
               ),
             );
           }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('HORA DE RECORDATORIO', style: GoogleFonts.sora(
+            fontSize: 11, fontWeight: FontWeight.w600,
+            color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        const Gap(8),
+        GestureDetector(
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: _notifTime,
+              builder: (ctx, child) => Theme(
+                data: ThemeData.dark().copyWith(
+                  colorScheme: const ColorScheme.dark(
+                    primary: Color(0xFF10B981),
+                    surface: Color(0xFF0D1117),
+                  ),
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setState(() => _notifTime = picked);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4), width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.access_time_rounded, color: Color(0xFF10B981), size: 20),
+                const Gap(14),
+                Text(_notifTime.format(context),
+                    style: GoogleFonts.sora(fontSize: 15, color: Colors.white)),
+              ],
+            ),
+          ),
         ),
       ],
     );
