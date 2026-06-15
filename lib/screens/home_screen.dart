@@ -426,6 +426,257 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildCompletedTaskItem(Map<String, dynamic> data, String id) {
+    final priority = data['priority'] ?? 'Media';
+    final priorityColors = {
+      'Alta': const Color(0xFFEF4444),
+      'Media': const Color(0xFFF59E0B),
+      'Baja': const Color(0xFF10B981),
+    };
+    final color = priorityColors[priority] ?? const Color(0xFFF59E0B);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 24, height: 24,
+            decoration: const BoxDecoration(
+              color: Color(0xFF6366F1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, color: Colors.white, size: 14),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['title'] ?? '',
+                    style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600,
+                        color: const Color(0xFF6B7280),
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: const Color(0xFF6B7280))),
+                if ((data['description'] ?? '').isNotEmpty) ...[
+                  const Gap(3),
+                  Text(data['description'], style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF4B5563))),
+                ],
+              ],
+            ),
+          ),
+          const Gap(8),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text(priority, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: color.withOpacity(0.6))),
+              ),
+              const Gap(8),
+              // Restaurar tarea
+              GestureDetector(
+                onTap: () async {
+                  await FirebaseFirestore.instance
+                      .collection('users').doc(widget.user.uid).collection('tasks').doc(id)
+                      .update({'completed': false});
+                },
+                child: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.undo_rounded, color: Color(0xFF9CA3AF), size: 16),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPastReminderItem(Map<String, dynamic> data, String id) {
+    final dt = (data['dateTime'] as Timestamp?)?.toDate();
+    final repeat = data['repeat'] ?? 'No repetir';
+    final dateStr = dt != null
+        ? '${dt.day}/${dt.month}/${dt.year} • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+        : '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.15), width: 1.5),
+            ),
+            child: const Icon(Icons.notifications_off_outlined, color: Color(0xFF6B7280), size: 20),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['title'] ?? '',
+                    style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF6B7280))),
+                const Gap(3),
+                Text(dateStr.isNotEmpty ? '$dateStr  •  $repeat' : repeat,
+                    style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF4B5563))),
+              ],
+            ),
+          ),
+          const Gap(8),
+          // Eliminar
+          GestureDetector(
+            onTap: () async {
+              await FirebaseFirestore.instance
+                  .collection('users').doc(widget.user.uid).collection('reminders').doc(id)
+                  .delete();
+            },
+            child: Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTasksTab() {
+    final uid = widget.user.uid;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('tasks')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Color(0xFF6366F1), strokeWidth: 2));
+        }
+        final docs = snap.data?.docs ?? [];
+        final pending = docs.where((d) => (d.data() as Map)['completed'] != true).toList();
+        final completed = docs.where((d) => (d.data() as Map)['completed'] == true).toList();
+
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.check_circle_outline_rounded, color: const Color(0xFF6366F1).withOpacity(0.3), size: 56),
+              const Gap(16),
+              Text('No tienes tareas', style: GoogleFonts.sora(color: const Color(0xFF4B5563), fontSize: 15)),
+            ]),
+          );
+        }
+
+        return ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            // Pendientes
+            if (pending.isNotEmpty) ...[
+              _historyLabel('PENDIENTES', const Color(0xFF6366F1)),
+              const Gap(10),
+              ...pending.map((d) => _buildTaskItem(d.data() as Map<String, dynamic>, d.id)),
+            ],
+
+            // Completadas (ocultas)
+            if (completed.isNotEmpty) ...[
+              const Gap(16),
+              _buildCollapsibleSection(
+                label: 'COMPLETADAS (${completed.length})',
+                color: const Color(0xFF4B5563),
+                children: completed.map((d) => _buildCompletedTaskItem(d.data() as Map<String, dynamic>, d.id)).toList(),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRemindersTab() {
+    final uid = widget.user.uid;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('reminders')
+          .orderBy('dateTime', descending: false)
+          .snapshots(),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B), strokeWidth: 2));
+        }
+        final now = DateTime.now();
+        final docs = snap.data?.docs ?? [];
+        final upcoming = docs.where((d) {
+          final dt = ((d.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+          return dt != null && dt.isAfter(now);
+        }).toList();
+        final past = docs.where((d) {
+          final dt = ((d.data() as Map)['dateTime'] as Timestamp?)?.toDate();
+          return dt != null && dt.isBefore(now);
+        }).toList();
+
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.notifications_none_rounded, color: const Color(0xFFF59E0B).withOpacity(0.3), size: 56),
+              const Gap(16),
+              Text('No tienes recordatorios', style: GoogleFonts.sora(color: const Color(0xFF4B5563), fontSize: 15)),
+            ]),
+          );
+        }
+
+        return ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            if (upcoming.isNotEmpty) ...[
+              _historyLabel('PRÓXIMOS', const Color(0xFFF59E0B)),
+              const Gap(10),
+              ...upcoming.map((d) => _buildReminderItem(d.data() as Map<String, dynamic>, d.id)),
+            ],
+            if (past.isNotEmpty) ...[
+              const Gap(16),
+              _buildCollapsibleSection(
+                label: 'PASADOS (${past.length})',
+                color: const Color(0xFF4B5563),
+                children: past.map((d) => _buildPastReminderItem(d.data() as Map<String, dynamic>, d.id)).toList(),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _historyLabel(String label, Color color) {
+    return Text(label,
+        style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700,
+            color: color, letterSpacing: 1.2));
+  }
+
+  Widget _buildCollapsibleSection({
+    required String label,
+    required Color color,
+    required List<Widget> children,
+  }) {
+    return _CollapsibleSection(label: label, color: color, children: children);
+  }
+
   // ── Definición de secciones ──────────────────────────────────────────────────
   final List<_SectionData> _sections = const [
     _SectionData(
@@ -471,11 +722,18 @@ class _HomeScreenState extends State<HomeScreen>
                   child: _selectedTab == 0
                       ? _buildHomeContent()
                       : _selectedTab == 1
-                      ? _buildListTab(collection: 'tasks', color: const Color(0xFF6366F1), icon: Icons.check_circle_outline_rounded, emptyMsg: 'No tienes tareas pendientes.', itemBuilder: _buildTaskItem)
+                      ? _buildTasksTab()
                       : _selectedTab == 2
-                      ? _buildListTab(collection: 'habits', color: const Color(0xFF10B981), icon: Icons.loop_rounded, emptyMsg: 'No tienes hábitos registrados.', itemBuilder: _buildHabitItem)
-                      : _buildListTab(collection: 'reminders', color: const Color(0xFFF59E0B), icon: Icons.notifications_none_rounded, emptyMsg: 'No tienes recordatorios activos.', itemBuilder: _buildReminderItem),
+                      ? _buildListTab(
+                    collection: 'habits',
+                    color: const Color(0xFF10B981),
+                    icon: Icons.loop_rounded,
+                    emptyMsg: 'No tienes hábitos registrados.',
+                    itemBuilder: _buildHabitItem,
+                  )
+                      : _buildRemindersTab(),
                 ),
+
               ],
             ),
           ),
@@ -913,4 +1171,54 @@ class _BgPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CollapsibleSection extends StatefulWidget {
+  final String label;
+  final Color color;
+  final List<Widget> children;
+  const _CollapsibleSection({required this.label, required this.color, required this.children});
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Row(
+            children: [
+              Text(widget.label,
+                  style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700,
+                      color: widget.color, letterSpacing: 1.2)),
+              const Gap(8),
+              AnimatedRotation(
+                turns: _expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(Icons.keyboard_arrow_down_rounded, color: widget.color, size: 18),
+              ),
+            ],
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Column(
+            children: [
+              const Gap(10),
+              ...widget.children,
+            ],
+          ),
+          crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 250),
+        ),
+      ],
+    );
+  }
 }
