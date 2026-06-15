@@ -46,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 900),
     );
     _initSpeech();
+    _updateHabitStreaks();
   }
 
   Future<void> _initSpeech() async {
@@ -110,6 +111,51 @@ class _HomeScreenState extends State<HomeScreen>
         pauseFor: const Duration(seconds: 4),
         listenMode: ListenMode.confirmation,
       );
+    }
+  }
+
+  Future<void> _updateHabitStreaks() async {
+    final uid = widget.user.uid;
+    final snap = await FirebaseFirestore.instance
+        .collection('users').doc(uid).collection('habits')
+        .get();
+
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final List completedDates = List.from(data['completedDates'] ?? []);
+      final newStreak = _calculateStreak(completedDates);
+      final currentStreak = data['streak'] ?? 0;
+
+      if (newStreak != currentStreak) {
+        await doc.reference.update({'streak': newStreak});
+      }
+    }
+  }
+
+  int _calculateStreak(List dates) {
+    if (dates.isEmpty) return 0;
+    try {
+      final sorted = dates
+          .map((d) => DateTime.parse(d.toString()))
+          .toList()
+        ..sort((a, b) => b.compareTo(a));
+
+      int streak = 0;
+      DateTime check = DateTime.now();
+      for (final d in sorted) {
+        final day = DateTime(d.year, d.month, d.day);
+        final checkDay = DateTime(check.year, check.month, check.day);
+        final diff = checkDay.difference(day).inDays;
+        if (diff <= 1) {
+          streak++;
+          check = day;
+        } else {
+          break;
+        }
+      }
+      return streak;
+    } catch (_) {
+      return 0;
     }
   }
 
