@@ -7,6 +7,7 @@ import 'package:satus_proyecto/screens/habit_detail_screen.dart';
 import 'package:satus_proyecto/screens/reminder_detail_screen.dart';
 import 'package:satus_proyecto/screens/task_detail_screen.dart';
 import 'package:satus_proyecto/services/notification_service.dart';
+import '../services/voice_command_service.dart';
 import 'adds/add_habit_screen.dart';
 import 'adds/add_reminder_screen.dart';
 import 'adds/add_task_screen.dart';
@@ -37,7 +38,11 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _pulseCtrl;
   final SpeechToText _speech = SpeechToText();
   bool _speechAvailable = false;
+
   int _selectedTab = 0;
+  // ── Estado del calendario ─────────────────────────────────────────────────────
+  DateTime _selectedDay = DateTime.now();
+  DateTime _focusedMonth = DateTime.now();
   @override
   void initState() {
     super.initState();
@@ -47,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
     _initSpeech();
     _updateHabitStreaks();
+    NotificationService().rescheduleAll();
   }
 
   Future<void> _initSpeech() async {
@@ -100,17 +106,87 @@ class _HomeScreenState extends State<HomeScreen>
 
       await _speech.listen(
         onResult: (result) {
-          setState(() {
-            _voiceText = result.recognizedWords.isNotEmpty
-                ? result.recognizedWords
-                : 'Escuchando...';
-          });
+          setState(() => _voiceText = result.recognizedWords.isNotEmpty
+              ? result.recognizedWords
+              : 'Escuchando...');
+
+          // Procesar cuando el reconocimiento es final
+          if (result.finalResult && result.recognizedWords.isNotEmpty) {
+            _processVoiceCommand(result.recognizedWords);
+          }
         },
-        localeId: 'es_CO',   // español Colombia
+        localeId: 'es_CO',
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 4),
-        listenMode: ListenMode.confirmation,
+        pauseFor: const Duration(seconds: 3),
       );
+    }
+  }
+
+  void _processVoiceCommand(String text) async {
+    final command = VoiceCommandService.parse(text);
+    final desc = VoiceCommandService.description(command);
+
+    setState(() {
+      _isListening = false;
+      _voiceText = desc;
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+    });
+
+    await _speech.stop();
+
+    // Pequeña pausa para mostrar el feedback
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    if (!mounted) return;
+
+    switch (command) {
+      case VoiceCommand.newTask:
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddTaskScreen()));
+        break;
+      case VoiceCommand.newHabit:
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddHabitScreen()));
+        break;
+      case VoiceCommand.newReminder:
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddReminderScreen()));
+        break;
+      case VoiceCommand.goHome:
+        setState(() => _selectedTab = 0);
+        break;
+      case VoiceCommand.goTasks:
+        setState(() => _selectedTab = 1);
+        break;
+      case VoiceCommand.goHabits:
+        setState(() => _selectedTab = 2);
+        break;
+      case VoiceCommand.goReminders:
+        setState(() => _selectedTab = 3);
+        break;
+      case VoiceCommand.goStats:
+        setState(() => _selectedTab = 4);
+        break;
+      case VoiceCommand.signOut:
+        await NotificationService().cancelAllUserNotifications();
+        await AuthService().signOut();
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+        }
+        break;
+      case VoiceCommand.unknown:
+      // Mostrar mensaje y resetear después de 2 segundos
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          setState(() => _voiceText = 'Toca el micrófono para hablar...');
+        }
+        break;
+    }
+
+    // Resetear texto después de ejecutar comando
+    if (command != VoiceCommand.unknown && mounted) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
     }
   }
 
@@ -165,8 +241,15 @@ class _HomeScreenState extends State<HomeScreen>
       (Icons.check_circle_outline_rounded, 'Tareas'),
       (Icons.loop_rounded, 'Hábitos'),
       (Icons.notifications_none_rounded, 'Alertas'),
+      (Icons.bar_chart_rounded, 'Stats'),
     ];
-    final colors = [_accent, const Color(0xFF6366F1), const Color(0xFF10B981), const Color(0xFFF59E0B)];
+    final colors = [
+      _accent,
+      const Color(0xFF6366F1),
+      const Color(0xFF10B981),
+      const Color(0xFFF59E0B),
+      const Color(0xFFEC4899),
+    ];
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -723,72 +806,6 @@ class _HomeScreenState extends State<HomeScreen>
     return _CollapsibleSection(label: label, color: color, children: children);
   }
 
-  // ── Definición de secciones ──────────────────────────────────────────────────
-  final List<_SectionData> _sections = const [
-    _SectionData(
-      icon: Icons.check_circle_outline_rounded,
-      label: 'Tareas',
-      description: 'Organiza tus pendientes y completa tus metas diarias.',
-      gradient: [Color(0xFF6366F1), Color(0xFF4F46E5)],
-      glowColor: Color(0xFF6366F1),
-      tag: 'tasks',
-    ),
-    _SectionData(
-      icon: Icons.loop_rounded,
-      label: 'Hábitos',
-      description: 'Construye rutinas poderosas día a día.',
-      gradient: [Color(0xFF10B981), Color(0xFF059669)],
-      glowColor: Color(0xFF10B981),
-      tag: 'habits',
-    ),
-    _SectionData(
-      icon: Icons.notifications_none_rounded,
-      label: 'Recordatorios',
-      description: 'No olvides nada importante con alertas a tiempo.',
-      gradient: [Color(0xFFF59E0B), Color(0xFFD97706)],
-      glowColor: Color(0xFFF59E0B),
-      tag: 'reminders',
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _BgPainter())),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildVoiceBar(),
-                const Gap(8),
-                _buildTabBar(),
-                Expanded(
-                  child: _selectedTab == 0
-                      ? _buildHomeContent()
-                      : _selectedTab == 1
-                      ? _buildTasksTab()
-                      : _selectedTab == 2
-                      ? _buildListTab(
-                    collection: 'habits',
-                    color: const Color(0xFF10B981),
-                    icon: Icons.loop_rounded,
-                    emptyMsg: 'No tienes hábitos registrados.',
-                    itemBuilder: _buildHabitItem,
-                  )
-                      : _buildRemindersTab(),
-                ),
-
-              ],
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: _selectedTab != 0 ? _buildFAB() : null,
-    );
-  }
-
   Widget _buildHomeContent() {
     final displayName = widget.user.email?.split('@').first ?? 'Usuario';
     return SingleChildScrollView(
@@ -814,8 +831,6 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
-
-
 
   // ── Barra de voz ─────────────────────────────────────────────────────────────
   Widget _buildVoiceBar() {
@@ -972,6 +987,7 @@ class _HomeScreenState extends State<HomeScreen>
       },
     ).animate().fadeIn(delay: 700.ms, duration: 500.ms).slideY(begin: 0.2);
   }
+
   // ── Botón cerrar sesión ───────────────────────────────────────────────────────
   Widget _buildSignOutButton() {
     return SizedBox(
@@ -979,6 +995,7 @@ class _HomeScreenState extends State<HomeScreen>
       height: 50,
       child: OutlinedButton.icon(
         onPressed: () async {
+          await NotificationService().cancelAllUserNotifications();
           await AuthService().signOut();
           if (mounted) {
             Navigator.of(context).pushReplacement(
@@ -995,6 +1012,548 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     ).animate().fadeIn(delay: 800.ms, duration: 400.ms);
   }
+
+  Widget _buildStatsTab() {
+    final uid = widget.user.uid;
+    final db = FirebaseFirestore.instance;
+
+    return FutureBuilder<List<QuerySnapshot>>(
+      future: Future.wait([
+        db.collection('users').doc(uid).collection('tasks').get(),
+        db.collection('users').doc(uid).collection('habits').get(),
+        db.collection('users').doc(uid).collection('reminders').get(),
+      ]),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              color: Color(0xFFEC4899),
+              strokeWidth: 2,
+            ),
+          );
+        }
+
+        if (snap.hasError || !snap.hasData) {
+          return Center(
+            child: Text('Error al cargar datos',
+                style: GoogleFonts.sora(color: const Color(0xFF6B7280))),
+          );
+        }
+
+        final tasks = snap.data![0].docs;
+        final habits = snap.data![1].docs;
+        final reminders = snap.data![2].docs;
+
+        // Construir mapa de actividad una sola vez
+        final Map<String, List<String>> dayActivity = {};
+
+        for (final d in tasks) {
+          final data = d.data() as Map<String, dynamic>;
+          final dt = (data['dueDate'] as Timestamp?)?.toDate();
+          if (dt != null) {
+            dayActivity.putIfAbsent(_dayKey(dt), () => []).add('task');
+          }
+        }
+
+        for (final d in habits) {
+          final data = d.data() as Map<String, dynamic>;
+          for (final dateStr in List.from(data['completedDates'] ?? [])) {
+            try {
+              final dt = DateTime.parse(dateStr.toString());
+              dayActivity.putIfAbsent(_dayKey(dt), () => []).add('habit');
+            } catch (_) {}
+          }
+        }
+
+        for (final d in reminders) {
+          final data = d.data() as Map<String, dynamic>;
+          final dt = (data['dateTime'] as Timestamp?)?.toDate();
+          if (dt != null) {
+            dayActivity.putIfAbsent(_dayKey(dt), () => []).add('reminder');
+          }
+        }
+
+        return SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildGlobalStats(tasks, habits, reminders)
+                  .animate().fadeIn(duration: 400.ms),
+              const Gap(24),
+              _buildCalendarSection(dayActivity)
+                  .animate().fadeIn(delay: 150.ms, duration: 400.ms),
+              const Gap(24),
+              _buildDayDetail(
+                selectedDay: _selectedDay,
+                tasks: tasks,
+                habits: habits,
+                reminders: reminders,
+              ).animate().fadeIn(delay: 300.ms, duration: 400.ms),
+              const Gap(32),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _dayKey(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+
+  Widget _buildGlobalStats(List tasks, List habits, List reminders) {
+    final completedTasks = tasks.where((d) => (d.data() as Map)['completed'] == true).length;
+    final pendingTasks = tasks.length - completedTasks;
+    final totalStreak = habits.fold<int>(0, (sum, d) => sum + ((d.data() as Map)['streak'] as int? ?? 0));
+    final activeReminders = reminders.where((d) => (d.data() as Map)['active'] == true).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('RESUMEN GLOBAL', style: GoogleFonts.sora(
+            fontSize: 11, fontWeight: FontWeight.w700,
+            color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        const Gap(12),
+        Row(
+          children: [
+            _globalStatCard('$completedTasks', 'Completadas', Icons.check_circle_rounded, const Color(0xFF6366F1)),
+            const Gap(10),
+            _globalStatCard('$pendingTasks', 'Pendientes', Icons.pending_rounded, const Color(0xFFF59E0B)),
+          ],
+        ),
+        const Gap(10),
+        Row(
+          children: [
+            _globalStatCard('$totalStreak', 'Racha total', Icons.local_fire_department_rounded, const Color(0xFFEF4444)),
+            const Gap(10),
+            _globalStatCard('$activeReminders', 'Alertas', Icons.notifications_active_rounded, const Color(0xFF10B981)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _globalStatCard(String value, String label, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0D1117),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const Gap(12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
+                Text(label, style: GoogleFonts.sora(fontSize: 11, color: const Color(0xFF6B7280))),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCalendarSection(Map<String, List<String>> dayActivity) {
+    final now = DateTime.now();
+    final daysInMonth = DateUtils.getDaysInMonth(_focusedMonth.year, _focusedMonth.month);
+    final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final startWeekday = firstDay.weekday - 1;
+    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('CALENDARIO', style: GoogleFonts.sora(
+            fontSize: 11, fontWeight: FontWeight.w700,
+            color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        const Gap(12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D1117),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+          ),
+          child: Column(
+            children: [
+              // Navegación mes
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+                    }),
+                    child: Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.chevron_left_rounded, color: Color(0xFF9CA3AF), size: 20),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${months[_focusedMonth.month - 1]} ${_focusedMonth.year}',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+                    }),
+                    child: Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(color: const Color(0xFF1F2937), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.chevron_right_rounded, color: Color(0xFF9CA3AF), size: 20),
+                    ),
+                  ),
+                ],
+              ),
+              const Gap(16),
+
+              // Encabezado días
+              Row(
+                children: ['L','M','X','J','V','S','D'].map((d) => Expanded(
+                  child: Center(child: Text(d, style: GoogleFonts.sora(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF4B5563)))),
+                )).toList(),
+              ),
+              const Gap(8),
+
+              // Grid de días
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7, mainAxisSpacing: 6, crossAxisSpacing: 6),
+                itemCount: startWeekday + daysInMonth,
+                itemBuilder: (_, i) {
+                  if (i < startWeekday) return const SizedBox.shrink();
+                  final day = i - startWeekday + 1;
+                  final date = DateTime(_focusedMonth.year, _focusedMonth.month, day);
+                  final key = _dayKey(date);
+                  final activity = dayActivity[key] ?? [];
+                  final isSelected = _selectedDay.year == date.year &&
+                      _selectedDay.month == date.month &&
+                      _selectedDay.day == date.day;
+                  final isToday = now.year == date.year &&
+                      now.month == date.month &&
+                      now.day == date.day;
+                  final hasTasks = activity.contains('task');
+                  final hasHabits = activity.contains('habit');
+                  final hasReminders = activity.contains('reminder');
+
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedDay = date),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFEC4899)
+                            : isToday
+                            ? const Color(0xFFEC4899).withOpacity(0.15)
+                            : const Color(0xFF0D1117),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFEC4899)
+                              : isToday
+                              ? const Color(0xFFEC4899).withOpacity(0.5)
+                              : const Color(0xFF1F2937),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('$day', style: GoogleFonts.sora(
+                            fontSize: 12,
+                            fontWeight: isSelected || isToday ? FontWeight.w700 : FontWeight.w400,
+                            color: isSelected ? Colors.white : isToday ? const Color(0xFFEC4899) : const Color(0xFF9CA3AF),
+                          )),
+                          if (hasTasks || hasHabits || hasReminders) ...[
+                            const Gap(2),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (hasTasks) _dot(const Color(0xFF6366F1)),
+                                if (hasHabits) _dot(const Color(0xFF10B981)),
+                                if (hasReminders) _dot(const Color(0xFFF59E0B)),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              const Gap(12),
+              // Leyenda
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _legendItem(const Color(0xFF6366F1), 'Tareas'),
+                  const Gap(16),
+                  _legendItem(const Color(0xFF10B981), 'Hábitos'),
+                  const Gap(16),
+                  _legendItem(const Color(0xFFF59E0B), 'Alertas'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dot(Color color) => Container(
+    width: 5, height: 5,
+    margin: const EdgeInsets.symmetric(horizontal: 1),
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+
+  Widget _legendItem(Color color, String label) => Row(
+    children: [
+      Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const Gap(4),
+      Text(label, style: GoogleFonts.sora(fontSize: 11, color: const Color(0xFF6B7280))),
+    ],
+  );
+
+  Widget _buildDayDetail({
+    required DateTime selectedDay,
+    required List tasks,
+    required List habits,
+    required List reminders,
+  }) {
+    final key = _dayKey(selectedDay);
+    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    // Filtrar por día seleccionado
+    final dayTasks = tasks.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      final dt = (data['dueDate'] as Timestamp?)?.toDate();
+      return dt != null && _dayKey(dt) == key;
+    }).toList();
+
+    final dayHabits = habits.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      final dates = List.from(data['completedDates'] ?? []);
+      return dates.any((ds) {
+        try { return _dayKey(DateTime.parse(ds.toString())) == key; } catch (_) { return false; }
+      });
+    }).toList();
+
+    final dayReminders = reminders.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      final dt = (data['dateTime'] as Timestamp?)?.toDate();
+      return dt != null && _dayKey(dt) == key;
+    }).toList();
+
+    final hasAnything = dayTasks.isNotEmpty || dayHabits.isNotEmpty || dayReminders.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${selectedDay.day} ${months[selectedDay.month - 1]} ${selectedDay.year}'.toUpperCase(),
+          style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700,
+              color: const Color(0xFFEC4899), letterSpacing: 1.2),
+        ),
+        const Gap(12),
+
+        if (!hasAnything)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1117),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+            ),
+            child: Center(child: Text('Sin actividad este día',
+                style: GoogleFonts.sora(color: const Color(0xFF4B5563), fontSize: 14))),
+          ),
+
+        // Tareas del día
+        if (dayTasks.isNotEmpty) ...[
+          _dayDetailLabel('TAREAS', const Color(0xFF6366F1)),
+          const Gap(8),
+          ...dayTasks.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final completed = data['completed'] ?? false;
+            return _dayDetailItem(
+              icon: completed ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+              iconColor: completed ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+              title: data['title'] ?? '',
+              subtitle: data['priority'] ?? '',
+              borderColor: const Color(0xFF6366F1),
+            );
+          }),
+          const Gap(12),
+        ],
+
+        // Hábitos del día
+        if (dayHabits.isNotEmpty) ...[
+          _dayDetailLabel('HÁBITOS COMPLETADOS', const Color(0xFF10B981)),
+          const Gap(8),
+          ...dayHabits.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            return _dayDetailItem(
+              icon: Icons.loop_rounded,
+              iconColor: const Color(0xFF10B981),
+              title: '${data['icon'] ?? ''} ${data['title'] ?? ''}',
+              subtitle: data['frequency'] ?? '',
+              borderColor: const Color(0xFF10B981),
+            );
+          }),
+          const Gap(12),
+        ],
+
+        // Recordatorios del día
+        if (dayReminders.isNotEmpty) ...[
+          _dayDetailLabel('RECORDATORIOS', const Color(0xFFF59E0B)),
+          const Gap(8),
+          ...dayReminders.map((d) {
+            final data = d.data() as Map<String, dynamic>;
+            final dt = (data['dateTime'] as Timestamp?)?.toDate();
+            final timeStr = dt != null
+                ? '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+                : '';
+            return _dayDetailItem(
+              icon: Icons.notifications_rounded,
+              iconColor: const Color(0xFFF59E0B),
+              title: data['title'] ?? '',
+              subtitle: timeStr,
+              borderColor: const Color(0xFFF59E0B),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _dayDetailLabel(String label, Color color) => Text(label,
+      style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700, color: color, letterSpacing: 1.1));
+
+  Widget _dayDetailItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required Color borderColor,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor.withOpacity(0.3), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: iconColor, size: 20),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                if (subtitle.isNotEmpty)
+                  Text(subtitle, style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Definición de secciones ──────────────────────────────────────────────────
+  final List<_SectionData> _sections = const [
+    _SectionData(
+      icon: Icons.check_circle_outline_rounded,
+      label: 'Tareas',
+      description: 'Organiza tus pendientes y completa tus metas diarias.',
+      gradient: [Color(0xFF6366F1), Color(0xFF4F46E5)],
+      glowColor: Color(0xFF6366F1),
+      tag: 'tasks',
+    ),
+    _SectionData(
+      icon: Icons.loop_rounded,
+      label: 'Hábitos',
+      description: 'Construye rutinas poderosas día a día.',
+      gradient: [Color(0xFF10B981), Color(0xFF059669)],
+      glowColor: Color(0xFF10B981),
+      tag: 'habits',
+    ),
+    _SectionData(
+      icon: Icons.notifications_none_rounded,
+      label: 'Recordatorios',
+      description: 'No olvides nada importante con alertas a tiempo.',
+      gradient: [Color(0xFFF59E0B), Color(0xFFD97706)],
+      glowColor: Color(0xFFF59E0B),
+      tag: 'reminders',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      body: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: _BgPainter())),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildVoiceBar(),
+                const Gap(8),
+                _buildTabBar(),
+                Expanded(
+                  child: _selectedTab == 0
+                      ? _buildHomeContent()
+                      : _selectedTab == 1
+                      ? _buildTasksTab()
+                      : _selectedTab == 2
+                      ? _buildListTab(
+                    collection: 'habits',
+                    color: const Color(0xFF10B981),
+                    icon: Icons.loop_rounded,
+                    emptyMsg: 'No tienes hábitos registrados.',
+                    itemBuilder: _buildHabitItem,
+                  )
+                      : _selectedTab == 3
+                      ? _buildRemindersTab()
+                      : _buildStatsTab(),
+                ),
+
+              ],
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: (_selectedTab != 0 && _selectedTab != 4) ? _buildFAB() : null,
+    );
+  }
+
+
 }
 
 // ── Card de sección ───────────────────────────────────────────────────────────

@@ -292,27 +292,71 @@ class NotificationService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final snap = await FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('reminders')
-        .where('active', isEqualTo: true)
-        .get();
+    final db = FirebaseFirestore.instance;
 
-    for (final doc in snap.docs) {
+    // Recordatorios
+    final reminders = await db.collection('users').doc(uid)
+        .collection('reminders').where('active', isEqualTo: true).get();
+
+    for (final doc in reminders.docs) {
       final data = doc.data();
       final dt = (data['dateTime'] as Timestamp?)?.toDate();
-      if (dt == null) continue;
-
-      // Usar los últimos 8 caracteres del ID como int
-      final notifId = doc.id.hashCode.abs();
-
+      if (dt == null || dt.isBefore(DateTime.now())) continue;
       await scheduleReminder(
-        id: notifId,
+        id: doc.id.hashCode.abs(),
         title: data['title'] ?? 'Recordatorio',
         body: data['note']?.isNotEmpty == true ? data['note'] : 'Tienes un recordatorio',
         dateTime: dt,
         repeat: data['repeat'] ?? 'No repetir',
       );
     }
+
+    // Tareas
+    final tasks = await db.collection('users').doc(uid)
+        .collection('tasks').where('completed', isEqualTo: false).get();
+
+    for (final doc in tasks.docs) {
+      final data = doc.data();
+      final dt = (data['dueDate'] as Timestamp?)?.toDate();
+      if (dt == null) continue;
+      await scheduleTaskReminder(
+        id: doc.id.hashCode.abs(),
+        title: data['title'] ?? 'Tarea',
+        dueDate: dt,
+      );
+    }
+
+    // Hábitos
+    final habits = await db.collection('users').doc(uid)
+        .collection('habits').where('active', isEqualTo: true).get();
+
+    for (final doc in habits.docs) {
+      final data = doc.data();
+      final hour = data['notifHour'] as int?;
+      final minute = data['notifMinute'] as int?;
+      if (hour == null || minute == null) continue;
+      await scheduleHabitReminder(
+        id: doc.id.hashCode.abs(),
+        title: data['title'] ?? 'Hábito',
+        icon: data['icon'] ?? '💪',
+        hour: hour,
+        minute: minute,
+      );
+    }
+
+    print('✅ Notificaciones reprogramadas para: $uid');
+  }
+
+  Future<void> cancelAllUserNotifications() async {
+    await Workmanager().cancelAll();
+    await _plugin.cancelAll();
+    print('🗑️ Todas las notificaciones canceladas');
+  }
+
+  Future<void> rescheduleForUser(String uid) async {
+    await cancelAllUserNotifications();
+    await rescheduleAll();
+    print('🔄 Notificaciones reprogramadas para usuario: $uid');
   }
 
   // ── Generar ID desde doc ID de Firestore ──────────────────────────────────
