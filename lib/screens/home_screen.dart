@@ -39,6 +39,12 @@ class _HomeScreenState extends State<HomeScreen>
   final SpeechToText _speech = SpeechToText();
   bool _speechAvailable = false;
 
+  // Estado del flujo de voz
+  String _voiceFlowType = ''; // 'task', 'habit', 'reminder'
+  int _voiceFlowStep = 0;
+  Map<String, dynamic> _voiceFlowData = {};
+  bool _inFlow = false;
+
   int _selectedTab = 0;
   // ── Estado del calendario ─────────────────────────────────────────────────────
   DateTime _selectedDay = DateTime.now();
@@ -123,6 +129,12 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _processVoiceCommand(String text) async {
+    // Si estamos en un flujo activo, continuar con él
+    if (_inFlow) {
+      _handleFlowStep(text);
+      return;
+    }
+
     final command = VoiceCommandService.parse(text);
     final desc = VoiceCommandService.description(command);
 
@@ -134,21 +146,18 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     await _speech.stop();
-
-    // Pequeña pausa para mostrar el feedback
-    await Future.delayed(const Duration(milliseconds: 600));
-
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
 
     switch (command) {
       case VoiceCommand.newTask:
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddTaskScreen()));
+        _startTaskFlow();
         break;
       case VoiceCommand.newHabit:
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddHabitScreen()));
+        _startHabitFlow();
         break;
       case VoiceCommand.newReminder:
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const AddReminderScreen()));
+        _startReminderFlow();
         break;
       case VoiceCommand.goHome:
         setState(() => _selectedTab = 0);
@@ -175,19 +184,373 @@ class _HomeScreenState extends State<HomeScreen>
         }
         break;
       case VoiceCommand.unknown:
-      // Mostrar mensaje y resetear después de 2 segundos
         await Future.delayed(const Duration(seconds: 2));
-        if (mounted) {
-          setState(() => _voiceText = 'Toca el micrófono para hablar...');
-        }
+        if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
         break;
     }
+  }
 
-    // Resetear texto después de ejecutar comando
-    if (command != VoiceCommand.unknown && mounted) {
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
+  void _startTaskFlow() {
+    setState(() {
+      _inFlow = true;
+      _voiceFlowType = 'task';
+      _voiceFlowStep = 0;
+      _voiceFlowData = {};
+      _voiceText = '¿Cuál es el título de la tarea?';
+    });
+    _listenForFlow();
+  }
+
+  void _startHabitFlow() {
+    setState(() {
+      _inFlow = true;
+      _voiceFlowType = 'habit';
+      _voiceFlowStep = 0;
+      _voiceFlowData = {};
+      _voiceText = '¿Cuál es el nombre del hábito?';
+    });
+    _listenForFlow();
+  }
+
+  void _startReminderFlow() {
+    setState(() {
+      _inFlow = true;
+      _voiceFlowType = 'reminder';
+      _voiceFlowStep = 0;
+      _voiceFlowData = {};
+      _voiceText = '¿Cuál es el título del recordatorio?';
+    });
+    _listenForFlow();
+  }
+
+  void _listenForFlow() async {
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    setState(() {
+      _isListening = true;
+      _pulseCtrl.repeat(reverse: true);
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        if (result.finalResult && result.recognizedWords.isNotEmpty) {
+          _handleFlowStep(result.recognizedWords);
+        }
+      },
+      localeId: 'es_CO',
+      listenFor: const Duration(seconds: 20),
+      pauseFor: const Duration(seconds: 3),
+    );
+  }
+
+  void _handleFlowStep(String text) async {
+    await _speech.stop();
+    setState(() {
+      _isListening = false;
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+    });
+
+    switch (_voiceFlowType) {
+      case 'task':
+        await _handleTaskFlow(text);
+        break;
+      case 'habit':
+        await _handleHabitFlow(text);
+        break;
+      case 'reminder':
+        await _handleReminderFlow(text);
+        break;
     }
+  }
+
+  Future<void> _handleTaskFlow(String text) async {
+    switch (_voiceFlowStep) {
+      case 0: // Título
+        _voiceFlowData['title'] = text;
+        _voiceFlowStep = 1;
+        setState(() => _voiceText = '¿Qué prioridad tiene? Di alta, media o baja.');
+        _listenForFlow();
+        break;
+
+      case 1: // Prioridad
+        final t = text.toLowerCase();
+        String priority = 'Media';
+        if (t.contains('alta')) priority = 'Alta';
+        else if (t.contains('baja')) priority = 'Baja';
+        _voiceFlowData['priority'] = priority;
+        _voiceFlowStep = 2;
+        setState(() => _voiceText = '¿Tiene fecha límite? Di sí o no.');
+        _listenForFlow();
+        break;
+
+      case 2: // ¿Tiene fecha?
+        final t = text.toLowerCase();
+        if (t.contains('sí') || t.contains('si')) {
+          _voiceFlowStep = 3;
+          setState(() => _voiceText = 'Di la fecha: por ejemplo "15 de julio".');
+          _listenForFlow();
+        } else {
+          _voiceFlowData['dueDate'] = null;
+          await _saveTaskFromVoice();
+        }
+        break;
+
+      case 3: // Fecha
+        final date = _parseDateFromText(text);
+        _voiceFlowData['dueDate'] = date;
+        await _saveTaskFromVoice();
+        break;
+    }
+  }
+
+  Future<void> _saveTaskFromVoice() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final dueDate = _voiceFlowData['dueDate'] as DateTime?;
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('tasks')
+          .add({
+        'title': _voiceFlowData['title'],
+        'description': '',
+        'priority': _voiceFlowData['priority'] ?? 'Media',
+        'dueDate': dueDate != null ? Timestamp.fromDate(dueDate) : null,
+        'completed': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (dueDate != null) {
+        await NotificationService().scheduleTaskReminder(
+          id: docRef.id.hashCode.abs(),
+          title: _voiceFlowData['title'],
+          dueDate: dueDate,
+        );
+      }
+
+      _endFlow('✅ Tarea "${_voiceFlowData['title']}" creada.');
+    } catch (e) {
+      _endFlow('❌ Error al crear la tarea.');
+    }
+  }
+
+  //flujo de hábitos
+  Future<void> _handleHabitFlow(String text) async {
+    switch (_voiceFlowStep) {
+      case 0: // Nombre
+        _voiceFlowData['title'] = text;
+        _voiceFlowStep = 1;
+        setState(() => _voiceText = '¿Con qué frecuencia? Di diario, semanal o mensual.');
+        _listenForFlow();
+        break;
+
+      case 1: // Frecuencia
+        final t = text.toLowerCase();
+        String freq = 'Diario';
+        if (t.contains('semanal')) freq = 'Semanal';
+        else if (t.contains('mensual')) freq = 'Mensual';
+        _voiceFlowData['frequency'] = freq;
+        _voiceFlowStep = 2;
+        setState(() => _voiceText = '¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".');
+        _listenForFlow();
+        break;
+
+      case 2: // Hora
+        final time = _parseTimeFromText(text);
+        _voiceFlowData['hour'] = time[0];
+        _voiceFlowData['minute'] = time[1];
+        await _saveHabitFromVoice();
+        break;
+    }
+  }
+
+  Future<void> _saveHabitFromVoice() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final hour = _voiceFlowData['hour'] as int;
+      final minute = _voiceFlowData['minute'] as int;
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('habits')
+          .add({
+        'title': _voiceFlowData['title'],
+        'description': '',
+        'frequency': _voiceFlowData['frequency'] ?? 'Diario',
+        'icon': '💪',
+        'days': [0, 1, 2, 3, 4, 5, 6],
+        'streak': 0,
+        'completedDates': [],
+        'active': true,
+        'notifHour': hour,
+        'notifMinute': minute,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await NotificationService().scheduleHabitReminder(
+        id: docRef.id.hashCode.abs(),
+        title: _voiceFlowData['title'],
+        icon: '💪',
+        hour: hour,
+        minute: minute,
+      );
+
+      _endFlow('✅ Hábito "${_voiceFlowData['title']}" creado.');
+    } catch (e) {
+      _endFlow('❌ Error al crear el hábito.');
+    }
+  }
+
+  //flujo de recordatorios
+  Future<void> _handleReminderFlow(String text) async {
+    switch (_voiceFlowStep) {
+      case 0: // Título
+        _voiceFlowData['title'] = text;
+        _voiceFlowStep = 1;
+        setState(() => _voiceText = 'Di la fecha: por ejemplo "mañana" o "15 de julio".');
+        _listenForFlow();
+        break;
+
+      case 1: // Fecha
+        final date = _parseDateFromText(text);
+        _voiceFlowData['date'] = date ?? DateTime.now().add(const Duration(days: 1));
+        _voiceFlowStep = 2;
+        setState(() => _voiceText = '¿A qué hora? Di por ejemplo "tres de la tarde".');
+        _listenForFlow();
+        break;
+
+      case 2: // Hora
+        final time = _parseTimeFromText(text);
+        _voiceFlowData['hour'] = time[0];
+        _voiceFlowData['minute'] = time[1];
+        await _saveReminderFromVoice();
+        break;
+    }
+  }
+
+  Future<void> _saveReminderFromVoice() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final date = _voiceFlowData['date'] as DateTime;
+      final dateTime = DateTime(
+        date.year, date.month, date.day,
+        _voiceFlowData['hour'], _voiceFlowData['minute'],
+      );
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('reminders')
+          .add({
+        'title': _voiceFlowData['title'],
+        'note': '',
+        'dateTime': Timestamp.fromDate(dateTime),
+        'repeat': 'No repetir',
+        'active': true,
+        'triggered': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await NotificationService().scheduleReminder(
+        id: docRef.id.hashCode.abs(),
+        title: _voiceFlowData['title'],
+        body: 'Tienes un recordatorio',
+        dateTime: dateTime,
+        repeat: 'No repetir',
+      );
+
+      _endFlow('✅ Recordatorio "${_voiceFlowData['title']}" creado.');
+    } catch (e) {
+      _endFlow('❌ Error al crear el recordatorio.');
+    }
+  }
+
+  //helpers para parsing
+  void _endFlow(String message) async {
+    setState(() {
+      _inFlow = false;
+      _voiceFlowType = '';
+      _voiceFlowStep = 0;
+      _voiceFlowData = {};
+      _voiceText = message;
+    });
+    await Future.delayed(const Duration(seconds: 3));
+    if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
+  }
+
+  DateTime? _parseDateFromText(String text) {
+    final t = text.toLowerCase();
+    final now = DateTime.now();
+
+    if (t.contains('hoy')) return now;
+    if (t.contains('mañana')) return now.add(const Duration(days: 1));
+    if (t.contains('pasado')) return now.add(const Duration(days: 2));
+
+    // Intentar parsear "15 de julio"
+    const months = {
+      'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+      'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+      'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+    };
+
+    for (final entry in months.entries) {
+      if (t.contains(entry.key)) {
+        final regex = RegExp(r'(\d+)');
+        final match = regex.firstMatch(t);
+        if (match != null) {
+          final day = int.tryParse(match.group(1) ?? '') ?? 1;
+          int year = now.year;
+          if (entry.value < now.month) year++;
+          return DateTime(year, entry.value, day);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  List<int> _parseTimeFromText(String text) {
+    final t = text.toLowerCase();
+
+    // Detectar AM/PM
+    bool isPM = t.contains('tarde') || t.contains('noche') || t.contains('pm');
+    bool isAM = t.contains('mañana') || t.contains('am');
+
+    // Palabras a números
+    const wordNumbers = {
+      'una': 1, 'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5,
+      'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10,
+      'once': 11, 'doce': 12, 'cero': 0,
+    };
+
+    int hour = 8;
+    int minute = 0;
+
+    // Buscar número en palabras
+    for (final entry in wordNumbers.entries) {
+      if (t.contains(entry.key)) {
+        hour = entry.value;
+        break;
+      }
+    }
+
+    // Buscar número directo: "3:30" o "15"
+    final timeRegex = RegExp(r'(\d{1,2})(?::(\d{2}))?');
+    final match = timeRegex.firstMatch(t);
+    if (match != null) {
+      hour = int.tryParse(match.group(1) ?? '') ?? hour;
+      minute = int.tryParse(match.group(2) ?? '') ?? 0;
+    }
+
+    // Ajustar AM/PM
+    if (isPM && hour < 12) hour += 12;
+    if (isAM && hour == 12) hour = 0;
+    if (hour > 23) hour = 23;
+
+    // Buscar minutos en palabras
+    if (t.contains('y media')) minute = 30;
+    if (t.contains('y cuarto')) minute = 15;
+    if (t.contains('menos cuarto')) { hour--; minute = 45; }
+
+    return [hour, minute];
   }
 
   Future<void> _updateHabitStreaks() async {
