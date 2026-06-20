@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 enum VoiceCommand {
   newTask,
@@ -12,6 +12,7 @@ enum VoiceCommand {
   signOut,
   unknown,
 }
+final AudioPlayer _audioPlayer = AudioPlayer();
 
 class VoiceCommandService {
   static VoiceCommand parse(String text) {
@@ -52,6 +53,13 @@ class VoiceCommandService {
     return keywords.any((k) => text.contains(k));
   }
 
+  Future<void> _playErrorSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/error_sound.mp3'));
+    } catch (e) {
+      print('Error reproduciendo sonido: $e');
+    }
+  }
   // Descripción del comando para mostrar al usuario
   static String description(VoiceCommand cmd) {
     switch (cmd) {

@@ -16,6 +16,7 @@ import '../services/auth_service.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -44,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen>
   int _voiceFlowStep = 0;
   Map<String, dynamic> _voiceFlowData = {};
   bool _inFlow = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   int _selectedTab = 0;
   // ── Estado del calendario ─────────────────────────────────────────────────────
@@ -86,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _pulseCtrl.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -96,6 +99,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     if (_isListening) {
+      await _playStopSound(); // ← sonido de fin
       await _speech.stop();
       setState(() {
         _isListening = false;
@@ -104,6 +108,8 @@ class _HomeScreenState extends State<HomeScreen>
         _pulseCtrl.reset();
       });
     } else {
+      await _playStartSound(); // ← sonido de inicio
+      await Future.delayed(const Duration(milliseconds: 300));
       setState(() {
         _isListening = true;
         _voiceText = 'Escuchando...';
@@ -115,8 +121,6 @@ class _HomeScreenState extends State<HomeScreen>
           setState(() => _voiceText = result.recognizedWords.isNotEmpty
               ? result.recognizedWords
               : 'Escuchando...');
-
-          // Procesar cuando el reconocimiento es final
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
             _processVoiceCommand(result.recognizedWords);
           }
@@ -184,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
         break;
       case VoiceCommand.unknown:
+        await _playErrorSound();
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
         break;
@@ -227,6 +232,8 @@ class _HomeScreenState extends State<HomeScreen>
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
+    await _playStartSound();
+    await Future.delayed(const Duration(milliseconds: 300));
     setState(() {
       _isListening = true;
       _pulseCtrl.repeat(reverse: true);
@@ -245,6 +252,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _handleFlowStep(String text) async {
+    await _playStopSound();
     await _speech.stop();
     setState(() {
       _isListening = false;
@@ -331,6 +339,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       _endFlow('✅ Tarea "${_voiceFlowData['title']}" creada.');
     } catch (e) {
+      
       _endFlow('❌ Error al crear la tarea.');
     }
   }
@@ -400,6 +409,8 @@ class _HomeScreenState extends State<HomeScreen>
       _endFlow('❌ Error al crear el hábito.');
     }
   }
+
+
 
   //flujo de recordatorios
   Future<void> _handleReminderFlow(String text) async {
@@ -551,6 +562,30 @@ class _HomeScreenState extends State<HomeScreen>
     if (t.contains('menos cuarto')) { hour--; minute = 45; }
 
     return [hour, minute];
+  }
+
+  Future<void> _playStartSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/start_listening.mp3'));
+    } catch (e) {
+      print('Error reproduciendo sonido: $e');
+    }
+  }
+
+  Future<void> _playStopSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/stop_listening.mp3'));
+    } catch (e) {
+      print('Error reproduciendo sonido: $e');
+    }
+  }
+
+  Future<void> _playErrorSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/error_sound.mp3'));
+    } catch (e) {
+      print('Error reproduciendo sonido: $e');
+    }
   }
 
   Future<void> _updateHabitStreaks() async {
