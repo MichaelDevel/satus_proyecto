@@ -75,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
       },
       onError: (error) {
+        _playErrorSound();
         if (mounted) setState(() {
           _isListening = false;
           _voiceText = 'Error: ${error.errorMsg}';
@@ -339,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       _endFlow('✅ Tarea "${_voiceFlowData['title']}" creada.');
     } catch (e) {
-      
+      _playErrorSound();
       _endFlow('❌ Error al crear la tarea.');
     }
   }
@@ -406,6 +407,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       _endFlow('✅ Hábito "${_voiceFlowData['title']}" creado.');
     } catch (e) {
+      _playErrorSound();
       _endFlow('❌ Error al crear el hábito.');
     }
   }
@@ -470,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       _endFlow('✅ Recordatorio "${_voiceFlowData['title']}" creado.');
     } catch (e) {
+      _playErrorSound();
       _endFlow('❌ Error al crear el recordatorio.');
     }
   }
