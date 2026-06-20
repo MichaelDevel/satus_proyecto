@@ -133,13 +133,93 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _createReminderFromCommand(String text) async {
+    setState(() => _voiceText = '🔔 Creando recordatorio...');
+
+    // Extraer título: lo que sigue a "llamada/llamado/titulada" o después de "para"
+    String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
+
+    // Si no encontró título explícito, usar lo que queda después de quitar fecha/hora/verbos
+    if (title.isEmpty) {
+      title = _extractFallbackTitle(text);
+    }
+
+    // Extraer fecha (default: mañana)
+    DateTime date = _parseDateFromText(text) ?? DateTime.now().add(const Duration(days: 1));
+
+    // Extraer hora (default: 9:00 AM)
+    List<int>? time = _parseTimeFromTextNullable(text);
+    int hour = time?[0] ?? 9;
+    int minute = time?[1] ?? 0;
+
+    final dateTime = DateTime(date.year, date.month, date.day, hour, minute);
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('reminders')
+          .add({
+        'title': title.isNotEmpty ? title : 'Recordatorio',
+        'note': '',
+        'dateTime': Timestamp.fromDate(dateTime),
+        'repeat': 'No repetir',
+        'active': true,
+        'triggered': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await NotificationService().scheduleReminder(
+        id: docRef.id.hashCode.abs(),
+        title: title.isNotEmpty ? title : 'Recordatorio',
+        body: 'Tienes un recordatorio',
+        dateTime: dateTime,
+        repeat: 'No repetir',
+      );
+
+      final dateLabel = _formatDateLabel(dateTime);
+      _endFlow('✅ Recordatorio "$title" creado para $dateLabel a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');
+    } catch (e) {
+      _endFlow('❌ Error al crear el recordatorio.');
+    }
+  }
+
+  Future<void> _handleSmartCreate(String text) async {
+    await _playStopSound();
+    await _speech.stop();
+    setState(() {
+      _isListening = false;
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+    });
+
+    final t = text.toLowerCase();
+
+    if (t.contains('hábito') || t.contains('habito')) {
+      await _createHabitFromCommand(text);
+    } else if (t.contains('recordatorio') || t.contains('alerta')) {
+      await _createReminderFromCommand(text);
+    } else if (t.contains('tarea')) {
+      await _createTaskFromCommand(text);
+    } else {
+      _endFlow('❓ No entendí qué quieres crear.');
+    }
+  }
+
   void _processVoiceCommand(String text) async {
-    // Si estamos en un flujo activo, continuar con él
     if (_inFlow) {
       _handleFlowStep(text);
       return;
     }
 
+    final t = text.toLowerCase().trim();
+
+    // Detectar comando completo de creación
+    if (_isCreateCommand(t)) {
+      await _handleSmartCreate(text);
+      return;
+    }
+
+    // Comandos de navegación normales
     final command = VoiceCommandService.parse(text);
     final desc = VoiceCommandService.description(command);
 
@@ -189,11 +269,107 @@ class _HomeScreenState extends State<HomeScreen>
         }
         break;
       case VoiceCommand.unknown:
-        await _playErrorSound();
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
         break;
     }
+  }
+
+  Future<void> _createTaskFromCommand(String text) async {
+    setState(() => _voiceText = '📋 Creando tarea...');
+
+    String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
+    if (title.isEmpty) title = _extractFallbackTitle(text);
+
+    final t = text.toLowerCase();
+    String priority = 'Media';
+    if (t.contains('alta') || t.contains('urgente') || t.contains('importante')) priority = 'Alta';
+    else if (t.contains('baja')) priority = 'Baja';
+
+    DateTime? dueDate = _parseDateFromText(text);
+    // Si no hay fecha explícita, default a mañana
+    dueDate ??= DateTime.now().add(const Duration(days: 1));
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('tasks')
+          .add({
+        'title': title.isNotEmpty ? title : 'Tarea',
+        'description': '',
+        'priority': priority,
+        'dueDate': Timestamp.fromDate(dueDate),
+        'completed': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await NotificationService().scheduleTaskReminder(
+        id: docRef.id.hashCode.abs(),
+        title: title.isNotEmpty ? title : 'Tarea',
+        dueDate: dueDate,
+      );
+
+      final dateLabel = _formatDateLabel(dueDate);
+      _endFlow('✅ Tarea "$title" creada para $dateLabel, prioridad $priority.');
+    } catch (e) {
+      _endFlow('❌ Error al crear la tarea.');
+    }
+  }
+
+  Future<void> _createHabitFromCommand(String text) async {
+    setState(() => _voiceText = '🔄 Creando hábito...');
+
+    String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
+    if (title.isEmpty) title = _extractFallbackTitle(text);
+
+    final t = text.toLowerCase();
+    String frequency = 'Diario'; // default
+    if (t.contains('semanal')) frequency = 'Semanal';
+    else if (t.contains('mensual')) frequency = 'Mensual';
+
+    List<int>? time = _parseTimeFromTextNullable(text);
+    int hour = time?[0] ?? 8; // default 8am
+    int minute = time?[1] ?? 0;
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('habits')
+          .add({
+        'title': title.isNotEmpty ? title : 'Hábito',
+        'description': '',
+        'frequency': frequency,
+        'icon': '💪',
+        'days': [0, 1, 2, 3, 4, 5, 6],
+        'streak': 0,
+        'completedDates': [],
+        'active': true,
+        'notifHour': hour,
+        'notifMinute': minute,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await NotificationService().scheduleHabitReminder(
+        id: docRef.id.hashCode.abs(),
+        title: title.isNotEmpty ? title : 'Hábito',
+        icon: '💪',
+        hour: hour,
+        minute: minute,
+      );
+
+      _endFlow('✅ Hábito "$title" creado, $frequency a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');
+    } catch (e) {
+      _endFlow('❌ Error al crear el hábito.');
+    }
+  }
+
+  bool _isCreateCommand(String t) {
+    final verbs = ['crea', 'crear', 'agrega', 'agregar', 'añade', 'añadir', 'pon', 'poner', 'nueva', 'nuevo'];
+    final types = ['tarea', 'hábito', 'habito', 'recordatorio', 'alerta'];
+    final hasVerb = verbs.any((v) => t.contains(v));
+    final hasType = types.any((ty) => t.contains(ty));
+    // Solo es comando completo si tiene más contenido que solo "crea tarea"
+    return hasVerb && hasType && t.split(' ').length > 3;
   }
 
   void _startTaskFlow() {
@@ -412,8 +588,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-
-
   //flujo de recordatorios
   Future<void> _handleReminderFlow(String text) async {
     switch (_voiceFlowStep) {
@@ -565,6 +739,69 @@ class _HomeScreenState extends State<HomeScreen>
     if (t.contains('menos cuarto')) { hour--; minute = 45; }
 
     return [hour, minute];
+  }
+
+  String _extractTitle(String text, List<String> keywords) {
+    final t = text.toLowerCase();
+    for (final kw in keywords) {
+      final idx = t.indexOf(kw);
+      if (idx != -1) {
+        final after = text.substring(idx + kw.length).trim();
+        // Cortar en la primera palabra de fecha/hora si existe
+        return _cleanTitle(after);
+      }
+    }
+    return '';
+  }
+
+  String _extractFallbackTitle(String text) {
+    // Quita verbos, tipos, fechas y horas comunes para quedarse con lo esencial
+    String t = text;
+    final removeWords = [
+      'crea', 'crear', 'agrega', 'agregar', 'añade', 'añadir', 'pon', 'poner',
+      'nueva', 'nuevo', 'una', 'un', 'tarea', 'hábito', 'habito', 'recordatorio',
+      'alerta', 'para', 'mañana', 'hoy', 'pasado mañana', 'a las',
+    ];
+    for (final w in removeWords) {
+      t = t.replaceAll(RegExp(w, caseSensitive: false), '');
+    }
+    // Quitar patrones de hora como "2:00pm", "dos de la tarde"
+    t = t.replaceAll(RegExp(r'\d{1,2}:\d{2}\s*(am|pm)?', caseSensitive: false), '');
+    t = t.replaceAll(RegExp(r'\d{1,2}\s*(am|pm)', caseSensitive: false), '');
+
+    return _cleanTitle(t);
+  }
+
+  String _cleanTitle(String text) {
+    return text
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .take(6) // máximo 6 palabras como título
+        .join(' ')
+        .trim();
+  }
+
+  List<int>? _parseTimeFromTextNullable(String text) {
+    final t = text.toLowerCase();
+    if (!RegExp(r'\d{1,2}(:\d{2})?\s*(am|pm)?|de la (mañana|tarde|noche)').hasMatch(t)) {
+      return null; // No se mencionó hora
+    }
+    return _parseTimeFromText(text);
+  }
+
+  String _formatDateLabel(DateTime date) {
+    final now = DateTime.now();
+    final diff = DateTime(date.year, date.month, date.day)
+        .difference(DateTime(now.year, now.month, now.day)).inDays;
+
+    if (diff == 0) return 'hoy';
+    if (diff == 1) return 'mañana';
+    if (diff == 2) return 'pasado mañana';
+
+    const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return '${date.day} de ${months[date.month - 1]}';
   }
 
   Future<void> _playStartSound() async {
