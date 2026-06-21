@@ -17,6 +17,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -46,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen>
   Map<String, dynamic> _voiceFlowData = {};
   bool _inFlow = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final FlutterTts _tts = FlutterTts();
 
   int _selectedTab = 0;
   // ── Estado del calendario ─────────────────────────────────────────────────────
@@ -59,10 +61,11 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 900),
     );
     _initSpeech();
+    _initTts();
     _updateHabitStreaks();
     NotificationService().rescheduleAll();
   }
-
+  // ── Inicializaciones ─────────────────────────────────────────────────────
   Future<void> _initSpeech() async {
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
@@ -78,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen>
         _playErrorSound();
         if (mounted) setState(() {
           _isListening = false;
+          _speak("Error");
           _voiceText = 'Error: ${error.errorMsg}';
           _pulseCtrl.stop();
           _pulseCtrl.reset();
@@ -86,10 +90,18 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Future<void> _initTts() async {
+    await _tts.setLanguage('es-CO');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+  }
+
   @override
   void dispose() {
     _pulseCtrl.dispose();
     _audioPlayer.dispose();
+    _tts.stop();
     super.dispose();
   }
 
@@ -145,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     // Extraer fecha (default: mañana)
-    DateTime date = _parseDateFromText(text) ?? DateTime.now().add(const Duration(days: 1));
+    DateTime date = _parseDateFromText(text) ?? DateTime.now();
 
     // Extraer hora (default: 9:00 AM)
     List<int>? time = _parseTimeFromTextNullable(text);
@@ -177,7 +189,8 @@ class _HomeScreenState extends State<HomeScreen>
       );
 
       final dateLabel = _formatDateLabel(dateTime);
-      _endFlow('✅ Recordatorio "$title" creado para $dateLabel a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');
+      final dateFormatted = '${dateTime.day.toString().padLeft(2,'0')}/${dateTime.month.toString().padLeft(2,'0')}/${dateTime.year}';
+      _endFlow('✅ Recordatorio "$title" creado para el día $dateFormatted a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');
     } catch (e) {
       _endFlow('❌ Error al crear el recordatorio.');
     }
@@ -269,6 +282,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
         break;
       case VoiceCommand.unknown:
+        _speak('Comando no reconocido');
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
         break;
@@ -310,7 +324,8 @@ class _HomeScreenState extends State<HomeScreen>
       );
 
       final dateLabel = _formatDateLabel(dueDate);
-      _endFlow('✅ Tarea "$title" creada para $dateLabel, prioridad $priority.');
+      final dateFormatted = '${dueDate.day.toString().padLeft(2,'0')}/${dueDate.month.toString().padLeft(2,'0')}/${dueDate.year}';
+      _endFlow('✅ Tarea "$title" creada para el día $dateFormatted con prioridad $priority.');
     } catch (e) {
       _endFlow('❌ Error al crear la tarea.');
     }
@@ -357,9 +372,9 @@ class _HomeScreenState extends State<HomeScreen>
         minute: minute,
       );
 
-      _endFlow('✅ Hábito "$title" creado, $frequency a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');
-    } catch (e) {
+      _endFlow('✅ Hábito "$title" creado con frecuencia $frequency a las ${hour.toString().padLeft(2,'0')}:${minute.toString().padLeft(2,'0')}.');    } catch (e) {
       _endFlow('❌ Error al crear el hábito.');
+
     }
   }
 
@@ -380,6 +395,7 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowData = {};
       _voiceText = '¿Cuál es el título de la tarea?';
     });
+    _speak('¿Cuál es el título de la tarea?');
     _listenForFlow();
   }
 
@@ -390,6 +406,7 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowStep = 0;
       _voiceFlowData = {};
       _voiceText = '¿Cuál es el nombre del hábito?';
+      _speak('¿Cuál es el nombre del hábito?');
     });
     _listenForFlow();
   }
@@ -401,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowStep = 0;
       _voiceFlowData = {};
       _voiceText = '¿Cuál es el título del recordatorio?';
+      _speak('¿Cuál es el título del recordatorio?');
     });
     _listenForFlow();
   }
@@ -450,12 +468,14 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  //flujo de tareas
   Future<void> _handleTaskFlow(String text) async {
     switch (_voiceFlowStep) {
       case 0: // Título
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
         setState(() => _voiceText = '¿Qué prioridad tiene? Di alta, media o baja.');
+        _speak('¿Qué prioridad tiene? Di alta, media o baja.');
         _listenForFlow();
         break;
 
@@ -467,6 +487,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceFlowData['priority'] = priority;
         _voiceFlowStep = 2;
         setState(() => _voiceText = '¿Tiene fecha límite? Di sí o no.');
+        _speak('¿Tiene fecha límite? Di sí o no.');
         _listenForFlow();
         break;
 
@@ -475,6 +496,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (t.contains('sí') || t.contains('si')) {
           _voiceFlowStep = 3;
           setState(() => _voiceText = 'Di la fecha: por ejemplo "15 de julio".');
+          _speak('Di la fecha: por ejemplo "15 de julio".');
           _listenForFlow();
         } else {
           _voiceFlowData['dueDate'] = null;
@@ -528,6 +550,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
         setState(() => _voiceText = '¿Con qué frecuencia? Di diario, semanal o mensual.');
+        _speak('¿Con qué frecuencia? Di diario, semanal o mensual.');
         _listenForFlow();
         break;
 
@@ -539,6 +562,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceFlowData['frequency'] = freq;
         _voiceFlowStep = 2;
         setState(() => _voiceText = '¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".');
+        _speak('¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".');
         _listenForFlow();
         break;
 
@@ -595,6 +619,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
         setState(() => _voiceText = 'Di la fecha: por ejemplo "mañana" o "15 de julio".');
+        _speak('Di la fecha: por ejemplo "mañana" o "15 de julio".');
         _listenForFlow();
         break;
 
@@ -603,6 +628,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceFlowData['date'] = date ?? DateTime.now().add(const Duration(days: 1));
         _voiceFlowStep = 2;
         setState(() => _voiceText = '¿A qué hora? Di por ejemplo "tres de la tarde".');
+        _speak('¿A qué hora? Di por ejemplo "tres de la tarde".');
         _listenForFlow();
         break;
 
@@ -660,6 +686,10 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowData = {};
       _voiceText = message;
     });
+    // Hablar el mensaje
+    final spokenText = message.replaceAll(RegExp(r'[✅❌🔔📋🔄]'), '').trim();
+    await _speak(spokenText);
+
     await Future.delayed(const Duration(seconds: 3));
     if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
   }
@@ -804,6 +834,10 @@ class _HomeScreenState extends State<HomeScreen>
     return '${date.day} de ${months[date.month - 1]}';
   }
 
+  Future<void> _speak(String text) async {
+    await _tts.speak(text);
+  }
+  // Sonidos para feedback
   Future<void> _playStartSound() async {
     try {
       await _audioPlayer.play(AssetSource('sounds/start_listening.mp3'));
