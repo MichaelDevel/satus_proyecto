@@ -36,10 +36,12 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Estado del micrófono ─────────────────────────────────────────────────────
   bool _isListening = false;
-  String _voiceText = 'Toca el micrófono para hablar...';
+  // String _voiceText = 'Toca el micrófono para hablar...';
+  final ValueNotifier<String> _voiceTextNotifier = ValueNotifier('Toca el micrófono para hablar...');
   late AnimationController _pulseCtrl;
   final SpeechToText _speech = SpeechToText();
   bool _speechAvailable = false;
+  bool _isProcessingCommand = false;
 
   // Estado del flujo de voz
   String _voiceFlowType = ''; // 'task', 'habit', 'reminder'
@@ -82,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) setState(() {
           _isListening = false;
           _speak("Error");
-          _voiceText = 'Error: ${error.errorMsg}';
+          _voiceTextNotifier.value = 'Error: ${error.errorMsg}';
           _pulseCtrl.stop();
           _pulseCtrl.reset();
         });
@@ -102,12 +104,13 @@ class _HomeScreenState extends State<HomeScreen>
     _pulseCtrl.dispose();
     _audioPlayer.dispose();
     _tts.stop();
+    _voiceTextNotifier.dispose();
     super.dispose();
   }
 
   void _toggleListening() async {
     if (!_speechAvailable) {
-      setState(() => _voiceText = 'Micrófono no disponible.');
+      _voiceTextNotifier.value = 'Micrófono no disponible.';
       return;
     }
 
@@ -116,25 +119,27 @@ class _HomeScreenState extends State<HomeScreen>
       await _speech.stop();
       setState(() {
         _isListening = false;
-        _voiceText = 'Toca el micrófono para hablar...';
         _pulseCtrl.stop();
         _pulseCtrl.reset();
       });
+      _voiceTextNotifier.value = 'Toca el micrófono para hablar...';
     } else {
       await _playStartSound(); // ← sonido de inicio
       await Future.delayed(const Duration(milliseconds: 300));
       setState(() {
         _isListening = true;
-        _voiceText = 'Escuchando...';
         _pulseCtrl.repeat(reverse: true);
       });
-
+      _voiceTextNotifier.value = 'Escuchando...';
       await _speech.listen(
         onResult: (result) {
-          setState(() => _voiceText = result.recognizedWords.isNotEmpty
+          _voiceTextNotifier.value = result.recognizedWords.isNotEmpty
               ? result.recognizedWords
-              : 'Escuchando...');
-          if (result.finalResult && result.recognizedWords.isNotEmpty) {
+              : 'Escuchando...';
+          if (result.finalResult &&
+              result.recognizedWords.isNotEmpty &&
+              !_isProcessingCommand) {
+            _isProcessingCommand = true;
             _processVoiceCommand(result.recognizedWords);
           }
         },
@@ -146,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _createReminderFromCommand(String text) async {
-    setState(() => _voiceText = '🔔 Creando recordatorio...');
+    _voiceTextNotifier.value = '🔔 Creando recordatorio...';
 
     // Extraer título: lo que sigue a "llamada/llamado/titulada" o después de "para"
     String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
@@ -218,6 +223,27 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _handleCompleteCommand(String text) async {
+    await _playStopSound();
+    await _speech.stop();
+    setState(() {
+      _isListening = false;
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+    });
+
+    final t = text.toLowerCase();
+
+    if (t.contains('hábito') || t.contains('habito')) {
+      await _completeHabitFromCommand(text);
+    } else if (t.contains('tarea')) {
+      await _completeTaskFromCommand(text);
+    } else {
+      // Sin tipo específico, buscar en ambas colecciones
+      await _completeAnyFromCommand(text);
+    }
+  }
+
   void _processVoiceCommand(String text) async {
     if (_inFlow) {
       _handleFlowStep(text);
@@ -226,6 +252,10 @@ class _HomeScreenState extends State<HomeScreen>
 
     final t = text.toLowerCase().trim();
 
+    if (_isCompleteCommand(t)) {
+      await _handleCompleteCommand(text);
+      return;
+    }
     // Detectar comando completo de creación
     if (_isCreateCommand(t)) {
       await _handleSmartCreate(text);
@@ -238,11 +268,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     setState(() {
       _isListening = false;
-      _voiceText = desc;
+
       _pulseCtrl.stop();
       _pulseCtrl.reset();
     });
-
+    _voiceTextNotifier.value = desc;
     await _speech.stop();
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
@@ -284,13 +314,13 @@ class _HomeScreenState extends State<HomeScreen>
       case VoiceCommand.unknown:
         _speak('Comando no reconocido');
         await Future.delayed(const Duration(seconds: 2));
-        if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
+        if (mounted) _voiceTextNotifier.value = 'Toca el micrófono para hablar...';
         break;
     }
   }
 
   Future<void> _createTaskFromCommand(String text) async {
-    setState(() => _voiceText = '📋 Creando tarea...');
+    _voiceTextNotifier.value = '📋 Creando tarea...';
 
     String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
     if (title.isEmpty) title = _extractFallbackTitle(text);
@@ -332,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _createHabitFromCommand(String text) async {
-    setState(() => _voiceText = '🔄 Creando hábito...');
+    _voiceTextNotifier.value = '🔄 Creando hábito...';
 
     String title = _extractTitle(text, ['llamada', 'llamado', 'titulada', 'titulado', 'llamar']);
     if (title.isEmpty) title = _extractFallbackTitle(text);
@@ -378,6 +408,11 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  bool _isCompleteCommand(String t) {
+    final verbs = ['completa', 'completar', 'marca', 'marcar', 'termina', 'terminar', 'hecho', 'hice', 'ya hice'];
+    return verbs.any((v) => t.contains(v));
+  }
+
   bool _isCreateCommand(String t) {
     final verbs = ['crea', 'crear', 'agrega', 'agregar', 'añade', 'añadir', 'pon', 'poner', 'nueva', 'nuevo'];
     final types = ['tarea', 'hábito', 'habito', 'recordatorio', 'alerta'];
@@ -393,8 +428,9 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowType = 'task';
       _voiceFlowStep = 0;
       _voiceFlowData = {};
-      _voiceText = '¿Cuál es el título de la tarea?';
+
     });
+    _voiceTextNotifier.value = '¿Cuál es el título de la tarea?';
     _speak('¿Cuál es el título de la tarea?');
     _listenForFlow();
   }
@@ -405,9 +441,9 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowType = 'habit';
       _voiceFlowStep = 0;
       _voiceFlowData = {};
-      _voiceText = '¿Cuál es el nombre del hábito?';
       _speak('¿Cuál es el nombre del hábito?');
     });
+    _voiceTextNotifier.value = '¿Cuál es el nombre del hábito?';
     _listenForFlow();
   }
 
@@ -417,9 +453,9 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowType = 'reminder';
       _voiceFlowStep = 0;
       _voiceFlowData = {};
-      _voiceText = '¿Cuál es el título del recordatorio?';
       _speak('¿Cuál es el título del recordatorio?');
     });
+    _voiceTextNotifier.value = '¿Cuál es el título del recordatorio?';
     _listenForFlow();
   }
 
@@ -431,6 +467,7 @@ class _HomeScreenState extends State<HomeScreen>
     await Future.delayed(const Duration(milliseconds: 300));
     setState(() {
       _isListening = true;
+      _isProcessingCommand = false;
       _pulseCtrl.repeat(reverse: true);
     });
 
@@ -474,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen>
       case 0: // Título
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
-        setState(() => _voiceText = '¿Qué prioridad tiene? Di alta, media o baja.');
+        _voiceTextNotifier.value = '¿Qué prioridad tiene? Di alta, media o baja.';
         _speak('¿Qué prioridad tiene? Di alta, media o baja.');
         _listenForFlow();
         break;
@@ -486,7 +523,7 @@ class _HomeScreenState extends State<HomeScreen>
         else if (t.contains('baja')) priority = 'Baja';
         _voiceFlowData['priority'] = priority;
         _voiceFlowStep = 2;
-        setState(() => _voiceText = '¿Tiene fecha límite? Di sí o no.');
+        _voiceTextNotifier.value = '¿Tiene fecha límite? Di sí o no.';
         _speak('¿Tiene fecha límite? Di sí o no.');
         _listenForFlow();
         break;
@@ -495,7 +532,7 @@ class _HomeScreenState extends State<HomeScreen>
         final t = text.toLowerCase();
         if (t.contains('sí') || t.contains('si')) {
           _voiceFlowStep = 3;
-          setState(() => _voiceText = 'Di la fecha: por ejemplo "15 de julio".');
+          _voiceTextNotifier.value = 'Di la fecha: por ejemplo "15 de julio".';
           _speak('Di la fecha: por ejemplo "15 de julio".');
           _listenForFlow();
         } else {
@@ -549,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen>
       case 0: // Nombre
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
-        setState(() => _voiceText = '¿Con qué frecuencia? Di diario, semanal o mensual.');
+        _voiceTextNotifier.value = '¿Con qué frecuencia? Di diario, semanal o mensual.';
         _speak('¿Con qué frecuencia? Di diario, semanal o mensual.');
         _listenForFlow();
         break;
@@ -561,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen>
         else if (t.contains('mensual')) freq = 'Mensual';
         _voiceFlowData['frequency'] = freq;
         _voiceFlowStep = 2;
-        setState(() => _voiceText = '¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".');
+        _voiceTextNotifier.value = '¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".';
         _speak('¿A qué hora quieres el recordatorio? Di por ejemplo "ocho de la mañana".');
         _listenForFlow();
         break;
@@ -618,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen>
       case 0: // Título
         _voiceFlowData['title'] = text;
         _voiceFlowStep = 1;
-        setState(() => _voiceText = 'Di la fecha: por ejemplo "mañana" o "15 de julio".');
+        _voiceTextNotifier.value = 'Di la fecha: por ejemplo "mañana" o "15 de julio".';
         _speak('Di la fecha: por ejemplo "mañana" o "15 de julio".');
         _listenForFlow();
         break;
@@ -627,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen>
         final date = _parseDateFromText(text);
         _voiceFlowData['date'] = date ?? DateTime.now().add(const Duration(days: 1));
         _voiceFlowStep = 2;
-        setState(() => _voiceText = '¿A qué hora? Di por ejemplo "tres de la tarde".');
+        _voiceTextNotifier.value = '¿A qué hora? Di por ejemplo "tres de la tarde".';
         _speak('¿A qué hora? Di por ejemplo "tres de la tarde".');
         _listenForFlow();
         break;
@@ -684,14 +721,15 @@ class _HomeScreenState extends State<HomeScreen>
       _voiceFlowType = '';
       _voiceFlowStep = 0;
       _voiceFlowData = {};
-      _voiceText = message;
+      _isProcessingCommand = false;
     });
+    _voiceTextNotifier.value = message;
     // Hablar el mensaje
     final spokenText = message.replaceAll(RegExp(r'[✅❌🔔📋🔄]'), '').trim();
     await _speak(spokenText);
 
     await Future.delayed(const Duration(seconds: 3));
-    if (mounted) setState(() => _voiceText = 'Toca el micrófono para hablar...');
+    if (mounted) _voiceTextNotifier.value = 'Toca el micrófono para hablar...';
   }
 
   DateTime? _parseDateFromText(String text) {
@@ -802,6 +840,23 @@ class _HomeScreenState extends State<HomeScreen>
     return _cleanTitle(t);
   }
 
+  String _extractItemName(String text) {
+    final t = text.toLowerCase();
+    String cleaned = t;
+
+    final removeWords = [
+      'completa', 'completar', 'marca', 'marcar', 'termina', 'terminar',
+      'hecho', 'hice', 'ya hice', 'la tarea', 'el hábito', 'el habito',
+      'tarea', 'hábito', 'habito', 'como', 'de',
+    ];
+
+    for (final w in removeWords) {
+      cleaned = cleaned.replaceAll(w, ' ');
+    }
+
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
   String _cleanTitle(String text) {
     return text
         .replaceAll(RegExp(r'\s+'), ' ')
@@ -834,9 +889,51 @@ class _HomeScreenState extends State<HomeScreen>
     return '${date.day} de ${months[date.month - 1]}';
   }
 
+  QueryDocumentSnapshot? _findBestMatch(List<QueryDocumentSnapshot> docs, String searchName) {
+    final search = searchName.toLowerCase().trim();
+    if (search.isEmpty || docs.isEmpty) return null;
+
+    // 1. Coincidencia exacta
+    for (final doc in docs) {
+      final title = ((doc.data() as Map)['title'] ?? '').toString().toLowerCase();
+      if (title == search) return doc;
+    }
+
+    // 2. El título contiene la búsqueda completa
+    for (final doc in docs) {
+      final title = ((doc.data() as Map)['title'] ?? '').toString().toLowerCase();
+      if (title.contains(search)) return doc;
+    }
+
+    // 3. La búsqueda contiene el título
+    for (final doc in docs) {
+      final title = ((doc.data() as Map)['title'] ?? '').toString().toLowerCase();
+      if (search.contains(title) && title.isNotEmpty) return doc;
+    }
+
+    // 4. Coincidencia por palabras compartidas (al menos 1 palabra en común de 3+ letras)
+    final searchWords = search.split(' ').where((w) => w.length >= 3).toSet();
+    QueryDocumentSnapshot? bestMatch;
+    int bestScore = 0;
+
+    for (final doc in docs) {
+      final title = ((doc.data() as Map)['title'] ?? '').toString().toLowerCase();
+      final titleWords = title.split(' ').where((w) => w.length >= 3).toSet();
+      final commonWords = searchWords.intersection(titleWords).length;
+      if (commonWords > bestScore) {
+        bestScore = commonWords;
+        bestMatch = doc;
+      }
+    }
+
+    return bestScore > 0 ? bestMatch : null;
+  }
+
+  // Voz
   Future<void> _speak(String text) async {
     await _tts.speak(text);
   }
+
   // Sonidos para feedback
   Future<void> _playStartSound() async {
     try {
@@ -862,6 +959,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  //acciones
   Future<void> _updateHabitStreaks() async {
     final uid = widget.user.uid;
     final snap = await FirebaseFirestore.instance
@@ -907,6 +1005,149 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _completeTaskFromCommand(String text) async {
+    final searchName = _extractItemName(text);
+    if (searchName.isEmpty) {
+      _endFlow('❓ No entendí qué tarea marcar.');
+      return;
+    }
+
+    _voiceTextNotifier.value = '🔍 Buscando tarea "$searchName"...';
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('tasks')
+          .where('completed', isEqualTo: false)
+          .get();
+
+      final match = _findBestMatch(snap.docs, searchName);
+
+      if (match == null) {
+        _endFlow('❌ No encontré ninguna tarea pendiente llamada "$searchName".');
+        return;
+      }
+
+      await match.reference.update({'completed': true});
+
+      // Cancelar notificaciones de esa tarea
+      await NotificationService().cancelTaskReminder(
+        NotificationService().idFromDocId(match.id),
+      );
+
+      final title = (match.data() as Map)['title'] ?? searchName;
+      _endFlow('✅ Tarea "$title" marcada como completada.');
+    } catch (e) {
+      _endFlow('❌ Error al completar la tarea.');
+    }
+  }
+
+  Future<void> _completeHabitFromCommand(String text) async {
+    final searchName = _extractItemName(text);
+    if (searchName.isEmpty) {
+      _endFlow('❓ No entendí qué hábito marcar.');
+      return;
+    }
+
+    _voiceTextNotifier.value = '🔍 Buscando hábito "$searchName"...';
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('habits')
+          .get();
+
+      final match = _findBestMatch(snap.docs, searchName);
+
+      if (match == null) {
+        _endFlow('❌ No encontré ningún hábito llamado "$searchName".');
+        return;
+      }
+
+      final data = match.data() as Map<String, dynamic>;
+      final today = DateTime.now();
+      final dateStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
+      final List dates = List.from(data['completedDates'] ?? []);
+
+      if (dates.contains(dateStr)) {
+        _endFlow('ℹ️ El hábito "${data['title']}" ya estaba marcado hoy.');
+        return;
+      }
+
+      dates.add(dateStr);
+      final streak = _calculateStreak(dates);
+
+      await match.reference.update({
+        'completedDates': dates,
+        'streak': streak,
+      });
+
+      final title = data['title'] ?? searchName;
+      _endFlow('✅ Hábito "$title" completado. Racha de $streak días.');
+    } catch (e) {
+      _endFlow('❌ Error al completar el hábito.');
+    }
+  }
+
+  Future<void> _completeAnyFromCommand(String text) async {
+    final searchName = _extractItemName(text);
+    if (searchName.isEmpty) {
+      _endFlow('❓ No entendí qué quieres marcar.');
+      return;
+    }
+
+    _voiceTextNotifier.value = '🔍 Buscando "$searchName"...';
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final db = FirebaseFirestore.instance;
+
+      // Buscar primero en tareas
+      final tasksSnap = await db.collection('users').doc(uid).collection('tasks')
+          .where('completed', isEqualTo: false).get();
+      final taskMatch = _findBestMatch(tasksSnap.docs, searchName);
+
+      if (taskMatch != null) {
+        await taskMatch.reference.update({'completed': true});
+        await NotificationService().cancelTaskReminder(
+          NotificationService().idFromDocId(taskMatch.id),
+        );
+        final title = (taskMatch.data() as Map)['title'] ?? searchName;
+        _endFlow('✅ Tarea "$title" marcada como completada.');
+        return;
+      }
+
+      // Si no, buscar en hábitos
+      final habitsSnap = await db.collection('users').doc(uid).collection('habits').get();
+      final habitMatch = _findBestMatch(habitsSnap.docs, searchName);
+
+      if (habitMatch != null) {
+        final data = habitMatch.data() as Map<String, dynamic>;
+        final today = DateTime.now();
+        final dateStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
+        final List dates = List.from(data['completedDates'] ?? []);
+
+        if (dates.contains(dateStr)) {
+          _endFlow('ℹ️ El hábito "${data['title']}" ya estaba marcado hoy.');
+          return;
+        }
+
+        dates.add(dateStr);
+        final streak = _calculateStreak(dates);
+        await habitMatch.reference.update({'completedDates': dates, 'streak': streak});
+
+        final title = data['title'] ?? searchName;
+        _endFlow('✅ Hábito "$title" completado. Racha de $streak días.');
+        return;
+      }
+
+      _endFlow('❌ No encontré ninguna tarea ni hábito llamado "$searchName".');
+    } catch (e) {
+      _endFlow('❌ Error al buscar el elemento.');
+    }
+  }
+
+  // UI
   Widget _buildTabBar() {
     final tabs = [
       (Icons.home_rounded, 'Inicio'),
@@ -1513,9 +1754,7 @@ class _HomeScreenState extends State<HomeScreen>
         color: _surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: _isListening
-              ? _accent.withOpacity(0.6)
-              : const Color(0xFF1F2937),
+          color: _isListening ? _accent.withOpacity(0.6) : const Color(0xFF1F2937),
           width: 1.5,
         ),
         boxShadow: _isListening
@@ -1524,10 +1763,8 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       child: Row(
         children: [
-          // Ícono de asistente
           Container(
-            width: 36,
-            height: 36,
+            width: 36, height: 36,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
@@ -1540,37 +1777,33 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const Gap(12),
 
-          // Texto de estado
+          // Solo este Text se reconstruye con cada palabra, no toda la pantalla
           Expanded(
-            child: Text(
-              _voiceText,
-              style: GoogleFonts.sora(
-                fontSize: 13,
-                color: _isListening
-                    ? Colors.white
-                    : const Color(0xFF6B7280),
-                fontWeight: _isListening ? FontWeight.w500 : FontWeight.w400,
+            child: ValueListenableBuilder<String>(
+              valueListenable: _voiceTextNotifier,
+              builder: (_, text, __) => Text(
+                text,
+                style: GoogleFonts.sora(
+                  fontSize: 13,
+                  color: _isListening ? Colors.white : const Color(0xFF6B7280),
+                  fontWeight: _isListening ? FontWeight.w500 : FontWeight.w400,
+                ),
               ),
             ),
           ),
 
-          // Indicador de onda cuando escucha
           if (_isListening) ...[
             _WaveIndicator(controller: _pulseCtrl),
             const Gap(10),
           ],
 
-          // Botón micrófono
           GestureDetector(
             onTap: _toggleListening,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              width: 40,
-              height: 40,
+              width: 40, height: 40,
               decoration: BoxDecoration(
-                color: _isListening
-                    ? _accent
-                    : const Color(0xFF1F2937),
+                color: _isListening ? _accent : const Color(0xFF1F2937),
                 shape: BoxShape.circle,
                 boxShadow: _isListening
                     ? [BoxShadow(color: _accent.withOpacity(0.4), blurRadius: 12, spreadRadius: 1)]
