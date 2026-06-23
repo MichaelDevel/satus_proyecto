@@ -1,12 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gap/gap.dart';
 import 'package:satus_proyecto/screens/habit_detail_screen.dart';
 import 'package:satus_proyecto/screens/reminder_detail_screen.dart';
 import 'package:satus_proyecto/screens/task_detail_screen.dart';
 import 'package:satus_proyecto/services/notification_service.dart';
+import '../services/persistent_notification_service.dart';
 import '../services/voice_command_service.dart';
 import 'adds/add_habit_screen.dart';
 import 'adds/add_reminder_screen.dart';
@@ -18,6 +20,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -28,12 +33,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // ── Colores ──────────────────────────────────────────────────────────────────
   static const _bg = Color(0xFF060A12);
   static const _surface = Color(0xFF0D1117);
   static const _accent = Color(0xFF6366F1);
 
+  bool _pendingStartListening = false;
   // ── Estado del micrófono ─────────────────────────────────────────────────────
   bool _isListening = false;
   // String _voiceText = 'Toca el micrófono para hablar...';
@@ -66,6 +72,13 @@ class _HomeScreenState extends State<HomeScreen>
     _initTts();
     _updateHabitStreaks();
     NotificationService().rescheduleAll();
+    PersistentNotificationService().start();
+    FlutterForegroundTask.addTaskDataCallback(_onForegroundData);
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      await _checkPendingListen();
+    });
   }
   // ── Inicializaciones ─────────────────────────────────────────────────────
   Future<void> _initSpeech() async {
@@ -77,19 +90,26 @@ class _HomeScreenState extends State<HomeScreen>
             _pulseCtrl.stop();
             _pulseCtrl.reset();
           });
+          _voiceTextNotifier.value = 'Toca el micrófono para hablar...';
+          PersistentNotificationService().updateText('Toca Hablar para dar un comando de voz');
         }
       },
       onError: (error) {
-        _playErrorSound();
         if (mounted) setState(() {
           _isListening = false;
-          _speak("Error");
-          _voiceTextNotifier.value = 'Error: ${error.errorMsg}';
           _pulseCtrl.stop();
           _pulseCtrl.reset();
         });
+        _voiceTextNotifier.value = 'Error: ${error.errorMsg}';
       },
     );
+
+    // ← Ejecutar intent pendiente si llegó antes de que el micrófono estuviera listo
+    if (_pendingStartListening && _speechAvailable && mounted) {
+      _pendingStartListening = false;
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted && !_isListening) _toggleListening();
+    }
   }
 
   Future<void> _initTts() async {
@@ -99,8 +119,72 @@ class _HomeScreenState extends State<HomeScreen>
     await _tts.setVolume(1.0);
   }
 
+  void _onForegroundData(Object data) {
+    print('📨 Datos recibidos del foreground: $data');
+    print('   _speechAvailable: $_speechAvailable');
+    print('   _isListening: $_isListening');
+    print('   mounted: $mounted');
+    print('   _pendingStartListening: $_pendingStartListening');
+    if (data is Map && data['action'] == 'start_listening') {
+      if (_speechAvailable && mounted && !_isListening) {
+        print('✅ Activando micrófono directamente...');
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          print('⏰ Delay completado, llamando _toggleListening...');
+          if (mounted && !_isListening) _toggleListening();
+        });
+      } else {
+        print('⏳ Marcando como pendiente...');
+        _pendingStartListening = true;
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    super.didChangeAppLifecycleState(state);
+    print('🔄 Ciclo de vida: $state');
+
+    if (state == AppLifecycleState.resumed) {
+      await _checkPendingListen();
+    }
+  }
+
+  Future<void> _checkPendingListen() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/pending_listen.txt');
+
+      if (!await file.exists()) {
+        print('🔍 No hay archivo pending_listen');
+        return;
+      }
+
+      final content = await file.readAsString();
+      final timestamp = int.tryParse(content.trim()) ?? 0;
+      final age = DateTime.now().millisecondsSinceEpoch - timestamp;
+
+      print('🔍 Archivo encontrado, age: ${age}ms');
+
+      if (age < 15000) { // menos de 15 segundos
+        await file.delete(); // limpiar
+        print('✅ Activando micrófono desde archivo...');
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (mounted && !_isListening && _speechAvailable) {
+          _toggleListening();
+        }
+      } else {
+        print('⚠️ Archivo muy antiguo ($age ms), ignorando');
+        await file.delete();
+      }
+    } catch (e) {
+      print('❌ Error leyendo archivo: $e');
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    FlutterForegroundTask.removeTaskDataCallback(_onForegroundData);
     _pulseCtrl.dispose();
     _audioPlayer.dispose();
     _tts.stop();
@@ -122,6 +206,7 @@ class _HomeScreenState extends State<HomeScreen>
         _pulseCtrl.stop();
         _pulseCtrl.reset();
       });
+      PersistentNotificationService().updateText('Toca Hablar para dar un comando de voz');
       _voiceTextNotifier.value = 'Toca el micrófono para hablar...';
     } else {
       await _playStartSound(); // ← sonido de inicio
@@ -130,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen>
         _isListening = true;
         _pulseCtrl.repeat(reverse: true);
       });
+      PersistentNotificationService().updateText('🎤 Escuchando...');
       _voiceTextNotifier.value = 'Escuchando...';
       await _speech.listen(
         onResult: (result) {
@@ -1900,6 +1986,7 @@ class _HomeScreenState extends State<HomeScreen>
       height: 50,
       child: OutlinedButton.icon(
         onPressed: () async {
+          await PersistentNotificationService().stop();
           await NotificationService().cancelAllUserNotifications();
           await AuthService().signOut();
           if (mounted) {

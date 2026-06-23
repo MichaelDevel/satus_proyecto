@@ -8,6 +8,8 @@ import 'screens/login_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/work_notification_service.dart';
+import 'services/foreground_service.dart';
+import 'services/persistent_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // ← obligatorio antes de Firebase
@@ -15,6 +17,7 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await NotificationService().init();
+  PersistentNotificationService().init();
   await Workmanager().initialize(
     callbackDispatcher,
     isInDebugMode: false,
