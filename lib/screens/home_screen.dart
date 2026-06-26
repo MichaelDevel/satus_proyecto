@@ -1823,6 +1823,274 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildActiveHabitsWidget() {
+    final uid = widget.user.uid;
+    final now = DateTime.now();
+    final nowMin = now.hour * 60 + now.minute;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('habits')
+          .where('active', isEqualTo: true)
+          .snapshots(),
+      builder: (_, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) return const SizedBox.shrink();
+
+        // Filtrar hábitos relevantes para hoy
+        final todayWeekday = now.weekday - 1; // 0=Lunes
+        final todayStr = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+
+        final habits = docs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          final days = List<int>.from(data['days'] ?? [0,1,2,3,4,5,6]);
+          final endH = data['endHour'] as int? ?? 23;
+          final endM = data['endMinute'] as int? ?? 59;
+          final endMin = endH * 60 + endM;
+          // Mostrar si es día activo y no ha terminado hace más de 1 hora
+          return days.contains(todayWeekday) && endMin >= nowMin - 60;
+        }).toList();
+
+        if (habits.isEmpty) return const SizedBox.shrink();
+
+        // Ordenar por hora de inicio
+        habits.sort((a, b) {
+          final aH = (a.data() as Map)['startHour'] as int? ?? 0;
+          final bH = (b.data() as Map)['startHour'] as int? ?? 0;
+          return aH.compareTo(bH);
+        });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionLabel('HÁBITOS DE HOY'),
+            const Gap(12),
+            Container(
+              decoration: BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+              ),
+              child: Column(
+                children: [
+                  // Banner hora actual
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: const Color(0xFF10B981).withOpacity(0.2), width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8, height: 8,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const Gap(8),
+                        Text(
+                          'Ahora — ${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}',
+                          style: GoogleFonts.sora(
+                              fontSize: 13, fontWeight: FontWeight.w600,
+                              color: const Color(0xFF10B981)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Gap(8),
+                  // Lista de hábitos
+                  ...habits.asMap().entries.map((entry) {
+                    final data = entry.value.data() as Map<String, dynamic>;
+                    final docId = entry.value.id;
+                    final startH = data['startHour'] as int? ?? 8;
+                    final startM = data['startMinute'] as int? ?? 0;
+                    final endH = data['endHour'] as int? ?? 9;
+                    final endM = data['endMinute'] as int? ?? 0;
+                    final startMin = startH * 60 + startM;
+                    final endMin = endH * 60 + endM;
+                    final isActive = nowMin >= startMin && nowMin < endMin;
+                    final isNext = !isActive && startMin > nowMin && startMin - nowMin <= 60;
+                    final isPast = endMin < nowMin;
+                    final completedDates = List.from(data['completedDates'] ?? []);
+                    final isDone = completedDates.contains(todayStr);
+
+                    final startStr = '${startH.toString().padLeft(2,'0')}:${startM.toString().padLeft(2,'0')}';
+                    final endStr = '${endH.toString().padLeft(2,'0')}:${endM.toString().padLeft(2,'0')}';
+                    final diffMin = endMin - startMin;
+                    final durStr = diffMin < 60
+                        ? '${diffMin}min'
+                        : '${diffMin ~/ 60}h${diffMin % 60 != 0 ? ' ${diffMin % 60}min' : ''}';
+
+                    final colors = [
+                      const Color(0xFF6366F1), const Color(0xFF10B981),
+                      const Color(0xFFF59E0B), const Color(0xFFEC4899),
+                      const Color(0xFF3B82F6),
+                    ];
+                    final color = colors[entry.key % colors.length];
+
+                    return Opacity(
+                      opacity: isPast && !isDone ? 0.5 : 1.0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: entry.key < habits.length - 1
+                                  ? const Color(0xFF1F2937)
+                                  : Colors.transparent,
+                              width: 0.5,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            // Hora
+                            SizedBox(
+                              width: 52,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(startStr, style: GoogleFonts.sora(
+                                      fontSize: 13, fontWeight: FontWeight.w600,
+                                      color: Colors.white)),
+                                  Text(endStr, style: GoogleFonts.sora(
+                                      fontSize: 11,
+                                      color: const Color(0xFF6B7280))),
+                                ],
+                              ),
+                            ),
+                            const Gap(10),
+                            // Barra de color
+                            Container(
+                              width: 3,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: isDone
+                                    ? const Color(0xFF10B981)
+                                    : isActive
+                                    ? color
+                                    : isNext
+                                    ? color.withOpacity(0.5)
+                                    : const Color(0xFF1F2937),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const Gap(10),
+                            // Info
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${data['icon'] ?? '💪'} ${data['title'] ?? ''}',
+                                    style: GoogleFonts.sora(
+                                        fontSize: 14, fontWeight: FontWeight.w600,
+                                        color: Colors.white),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const Gap(2),
+                                  Text(
+                                    '${data['frequency'] ?? 'Diario'} · $durStr',
+                                    style: GoogleFonts.sora(
+                                        fontSize: 11,
+                                        color: const Color(0xFF6B7280)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Gap(8),
+                            // Badge activo/próximo
+                            if (isActive)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: color.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                      color: color.withOpacity(0.4), width: 1),
+                                ),
+                                child: Text('Ahora',
+                                    style: GoogleFonts.sora(
+                                        fontSize: 10, fontWeight: FontWeight.w700,
+                                        color: color)),
+                              )
+                            else if (isNext)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF59E0B).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                      color: const Color(0xFFF59E0B).withOpacity(0.3),
+                                      width: 1),
+                                ),
+                                child: Text('En breve',
+                                    style: GoogleFonts.sora(
+                                        fontSize: 10, fontWeight: FontWeight.w700,
+                                        color: const Color(0xFFF59E0B))),
+                              ),
+                            const Gap(8),
+                            // Botón check
+                            GestureDetector(
+                              onTap: () async {
+                                final List dates = List.from(data['completedDates'] ?? []);
+                                if (isDone) {
+                                  dates.remove(todayStr);
+                                } else {
+                                  dates.add(todayStr);
+                                }
+                                final streak = _calculateStreak(dates);
+                                await FirebaseFirestore.instance
+                                    .collection('users').doc(uid)
+                                    .collection('habits').doc(docId)
+                                    .update({
+                                  'completedDates': dates,
+                                  'streak': streak,
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 30, height: 30,
+                                decoration: BoxDecoration(
+                                  color: isDone
+                                      ? const Color(0xFF10B981)
+                                      : Colors.transparent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isDone
+                                        ? const Color(0xFF10B981)
+                                        : const Color(0xFF4B5563),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: isDone
+                                    ? const Icon(Icons.check_rounded,
+                                    color: Colors.white, size: 16)
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ).animate().fadeIn(delay: 350.ms, duration: 500.ms);
+      },
+    );
+  }
+
   Widget _historyLabel(String label, Color color) {
     return Text(label,
         style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700,
@@ -1847,7 +2115,9 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           const Gap(32),
           _buildGreeting(displayName),
-          const Gap(36),
+          const Gap(24),
+          _buildActiveHabitsWidget(),
+          const Gap(12),
           _buildSectionLabel('¿Qué quieres hacer?'),
           const Gap(20),
           _buildCards(),
