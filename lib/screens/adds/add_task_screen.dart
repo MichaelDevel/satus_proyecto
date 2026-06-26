@@ -25,6 +25,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
   String _priority = 'Media';
   DateTime? _dueDate;
+  TimeOfDay? _dueTime;
   bool _isLoading = false;
 
   final List<String> _priorities = ['Alta', 'Media', 'Baja'];
@@ -61,37 +62,64 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     if (picked != null) setState(() => _dueDate = picked);
   }
 
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dueTime ?? TimeOfDay.now(),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF6366F1),
+            surface: Color(0xFF0D1117),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dueTime = picked);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-    final docRef = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('tasks')
+
+      DateTime? dueDateWithTime;
+      if (_dueDate != null) {
+        final time = _dueTime ?? const TimeOfDay(hour: 9, minute: 0);
+        dueDateWithTime = DateTime(
+          _dueDate!.year, _dueDate!.month, _dueDate!.day,
+          time.hour, time.minute,
+        );
+      }
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('tasks')
           .add({
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'priority': _priority,
-        'dueDate': _dueDate != null ? Timestamp.fromDate(_dueDate!) : null,
+        'dueDate': dueDateWithTime != null ? Timestamp.fromDate(dueDateWithTime) : null,
         'completed': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      if (_dueDate != null) {
+
+      if (dueDateWithTime != null) {
         await NotificationService().scheduleTaskReminder(
           id: docRef.id.hashCode.abs(),
           title: _titleCtrl.text.trim(),
-          dueDate: _dueDate!,
+          dueDate: dueDateWithTime,
         );
       }
+
       if (mounted) {
         _showSuccess('Tarea creada exitosamente.');
         Navigator.of(context).pop();
       }
     } catch (e) {
-      if (mounted) _showError('Error al guardar la tarea.');
+      if (mounted) _showError('Error al guardar la tarea: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -311,37 +339,110 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('FECHA LÍMITE', style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        Text('FECHA Y HORA LÍMITE',
+            style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600,
+                color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
         const Gap(8),
-        GestureDetector(
-          onTap: _pickDate,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _dueDate != null ? _accent : const Color(0xFF1F2937), width: 1.5),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today_rounded, color: _dueDate != null ? _accent : const Color(0xFF6B7280), size: 20),
-                const Gap(14),
-                Text(
-                  _dueDate != null
-                      ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
-                      : 'Seleccionar fecha (opcional)',
-                  style: GoogleFonts.sora(fontSize: 15, color: _dueDate != null ? Colors.white : const Color(0xFF4B5563)),
-                ),
-                const Spacer(),
-                if (_dueDate != null)
-                  GestureDetector(
-                    onTap: () => setState(() => _dueDate = null),
-                    child: const Icon(Icons.close_rounded, color: Color(0xFF6B7280), size: 18),
+        Row(
+          children: [
+            // Fecha
+            Expanded(
+              flex: 3,
+              child: GestureDetector(
+                onTap: _pickDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _dueDate != null ? _accent : const Color(0xFF1F2937),
+                      width: 1.5,
+                    ),
                   ),
-              ],
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today_rounded,
+                          color: _dueDate != null ? _accent : const Color(0xFF6B7280),
+                          size: 18),
+                      const Gap(10),
+                      Expanded(
+                        child: Text(
+                          _dueDate != null
+                              ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
+                              : 'Fecha',
+                          style: GoogleFonts.sora(
+                              fontSize: 14,
+                              color: _dueDate != null
+                                  ? Colors.white
+                                  : const Color(0xFF4B5563)),
+                        ),
+                      ),
+                      if (_dueDate != null)
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _dueDate = null;
+                            _dueTime = null;
+                          }),
+                          child: const Icon(Icons.close_rounded,
+                              color: Color(0xFF6B7280), size: 16),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
+            const Gap(10),
+            // Hora
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: _dueDate != null ? _pickTime : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _dueDate != null ? _surface : _surface.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _dueTime != null ? _accent : const Color(0xFF1F2937),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.access_time_rounded,
+                          color: _dueTime != null
+                              ? _accent
+                              : _dueDate != null
+                              ? const Color(0xFF6B7280)
+                              : const Color(0xFF2D3748),
+                          size: 18),
+                      const Gap(8),
+                      Text(
+                        _dueTime != null
+                            ? _dueTime!.format(context)
+                            : 'Hora',
+                        style: GoogleFonts.sora(
+                            fontSize: 14,
+                            color: _dueTime != null
+                                ? Colors.white
+                                : _dueDate != null
+                                ? const Color(0xFF4B5563)
+                                : const Color(0xFF2D3748)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+        if (_dueDate != null && _dueTime == null) ...[
+          const Gap(6),
+          Text('Opcional — sin hora, la alerta es a las 9:00 AM',
+              style: GoogleFonts.sora(fontSize: 11, color: const Color(0xFF4B5563))),
+        ],
       ],
     );
   }

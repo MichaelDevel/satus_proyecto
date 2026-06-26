@@ -1336,7 +1336,10 @@ class _HomeScreenState extends State<HomeScreen>
     final priority = data['priority'] ?? 'Media';
     final priorityColors = {'Alta': const Color(0xFFEF4444), 'Media': const Color(0xFFF59E0B), 'Baja': const Color(0xFF10B981)};
     final color = priorityColors[priority] ?? const Color(0xFFF59E0B);
-
+    final dt = (data['dueDate'] as Timestamp?)?.toDate();
+    final dateStr = dt != null
+        ? '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}'
+        : '';
 
     return
       GestureDetector(

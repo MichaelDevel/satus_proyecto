@@ -180,46 +180,45 @@ class NotificationService {
     required DateTime dueDate,
   }) async {
     await init();
-
     final now = DateTime.now();
 
     // Notificación el día anterior a las 9am
     final dayBefore = DateTime(dueDate.year, dueDate.month, dueDate.day - 1, 9, 0);
-    // Notificación el mismo día a las 9am
-    final sameDay = DateTime(dueDate.year, dueDate.month, dueDate.day, 9, 0);
-    print('📋 Programando tarea: $title');
-    print('   Vence: $dueDate');
-    print('   Notif día anterior: $dayBefore — futura: ${dayBefore.isAfter(now)}');
-    print('   Notif mismo día: $sameDay — futura: ${sameDay.isAfter(now)}');
+
+    // Notificación 1 hora antes de la hora límite
+    final oneHourBefore = dueDate.subtract(const Duration(hours: 1));
+
+    // Notificación exacta a la hora límite
+    final exactTime = dueDate;
 
     if (dayBefore.isAfter(now)) {
       await Workmanager().registerOneOffTask(
         'task_before_$id',
         'send_notification',
         initialDelay: dayBefore.difference(now),
-        inputData: {
-          'id': id,
-          'title': '📋 Tarea mañana',
-          'body': 'Mañana vence: $title',
-        },
+        inputData: {'id': id, 'title': '📋 Tarea mañana', 'body': 'Mañana vence: $title'},
         existingWorkPolicy: ExistingWorkPolicy.replace,
       );
-      print('   ✅ Notif día anterior registrada');
     }
 
-    if (sameDay.isAfter(now)) {
+    if (oneHourBefore.isAfter(now)) {
+      await Workmanager().registerOneOffTask(
+        'task_hour_$id',
+        'send_notification',
+        initialDelay: oneHourBefore.difference(now),
+        inputData: {'id': id + 1, 'title': '⏰ Tarea en 1 hora', 'body': 'En 1 hora vence: $title'},
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+    }
+
+    if (exactTime.isAfter(now)) {
       await Workmanager().registerOneOffTask(
         'task_due_$id',
         'send_notification',
-        initialDelay: sameDay.difference(now),
-        inputData: {
-          'id': id + 1,
-          'title': '⚠️ Tarea vence hoy',
-          'body': 'Vence hoy: $title',
-        },
+        initialDelay: exactTime.difference(now),
+        inputData: {'id': id + 2, 'title': '🚨 Tarea vencida', 'body': 'Venció ahora: $title'},
         existingWorkPolicy: ExistingWorkPolicy.replace,
       );
-      print('   ✅ Notif mismo día registrada');
     }
   }
 
@@ -227,7 +226,9 @@ class NotificationService {
   Future<void> cancelTaskReminder(int id) async {
     await _plugin.cancel(id);
     await _plugin.cancel(id + 1);
+    await _plugin.cancel(id + 2);
     await Workmanager().cancelByUniqueName('task_before_$id');
+    await Workmanager().cancelByUniqueName('task_hour_$id');
     await Workmanager().cancelByUniqueName('task_due_$id');
   }
 

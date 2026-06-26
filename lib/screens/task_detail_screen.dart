@@ -30,6 +30,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _isLoading = false;
   bool _editing = false;
 
+  TimeOfDay? _dueTime;
+
   final Map<String, Color> _priorityColors = {
     'Alta': Color(0xFFEF4444),
     'Media': Color(0xFFF59E0B),
@@ -43,7 +45,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _descCtrl = TextEditingController(text: widget.data['description'] ?? '');
     _priority = widget.data['priority'] ?? 'Media';
     final ts = widget.data['dueDate'] as Timestamp?;
-    _dueDate = ts?.toDate();
+    if (ts != null) {
+      final dt = ts.toDate();
+      _dueDate = DateTime(dt.year, dt.month, dt.day);
+      _dueTime = TimeOfDay(hour: dt.hour, minute: dt.minute); // ← agregar
+    }
   }
 
   @override
@@ -62,13 +68,33 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
+      DateTime? dueDateWithTime;
+      if (_dueDate != null) {
+        final time = _dueTime ?? const TimeOfDay(hour: 9, minute: 0);
+        dueDateWithTime = DateTime(
+          _dueDate!.year, _dueDate!.month, _dueDate!.day,
+          time.hour, time.minute,
+        );
+      }
+
       await _col.doc(widget.taskId).update({
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'priority': _priority,
-        'dueDate': _dueDate != null ? Timestamp.fromDate(_dueDate!) : null,
+        'dueDate': dueDateWithTime != null ? Timestamp.fromDate(dueDateWithTime) : null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      if (dueDateWithTime != null) {
+        await NotificationService().cancelTaskReminder(
+            NotificationService().idFromDocId(widget.taskId));
+        await NotificationService().scheduleTaskReminder(
+          id: NotificationService().idFromDocId(widget.taskId),
+          title: _titleCtrl.text.trim(),
+          dueDate: dueDateWithTime,
+        );
+      }
+
       if (mounted) {
         setState(() => _editing = false);
         _showSuccess('Tarea actualizada.');
@@ -142,6 +168,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       ),
     );
     if (picked != null) setState(() => _dueDate = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dueTime ?? TimeOfDay.now(),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF6366F1),
+            surface: Color(0xFF0D1117),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dueTime = picked);
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -377,34 +420,91 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('FECHA LÍMITE', style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        Text('FECHA Y HORA LÍMITE',
+            style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600,
+                color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
         const Gap(8),
-        GestureDetector(
-          onTap: _editing ? _pickDate : null,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _dueDate != null ? _accent : const Color(0xFF1F2937), width: 1.5),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today_rounded, color: _dueDate != null ? _accent : const Color(0xFF6B7280), size: 18),
-                const Gap(12),
-                Text(
-                  _dueDate != null ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}' : 'Sin fecha',
-                  style: GoogleFonts.sora(fontSize: 14, color: _dueDate != null ? Colors.white : const Color(0xFF4B5563)),
-                ),
-                const Spacer(),
-                if (_dueDate != null && _editing)
-                  GestureDetector(
-                    onTap: () => setState(() => _dueDate = null),
-                    child: const Icon(Icons.close_rounded, color: Color(0xFF6B7280), size: 16),
+        Row(
+          children: [
+            // Fecha
+            Expanded(
+              flex: 3,
+              child: GestureDetector(
+                onTap: _editing ? _pickDate : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _dueDate != null ? _accent : const Color(0xFF1F2937),
+                      width: 1.5,
+                    ),
                   ),
-              ],
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today_rounded,
+                          color: _dueDate != null ? _accent : const Color(0xFF6B7280),
+                          size: 18),
+                      const Gap(10),
+                      Expanded(
+                        child: Text(
+                          _dueDate != null
+                              ? '${_dueDate!.day}/${_dueDate!.month}/${_dueDate!.year}'
+                              : 'Sin fecha',
+                          style: GoogleFonts.sora(fontSize: 14,
+                              color: _dueDate != null ? Colors.white : const Color(0xFF4B5563)),
+                        ),
+                      ),
+                      if (_dueDate != null && _editing)
+                        GestureDetector(
+                          onTap: () => setState(() { _dueDate = null; _dueTime = null; }),
+                          child: const Icon(Icons.close_rounded,
+                              color: Color(0xFF6B7280), size: 16),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
+            const Gap(10),
+            // Hora
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: (_editing && _dueDate != null) ? _pickTime : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _dueDate != null ? _surface : _surface.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _dueTime != null ? _accent : const Color(0xFF1F2937),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.access_time_rounded,
+                          color: _dueTime != null
+                              ? _accent
+                              : const Color(0xFF6B7280),
+                          size: 18),
+                      const Gap(8),
+                      Text(
+                        _dueTime != null
+                            ? '${_dueTime!.hour.toString().padLeft(2,'0')}:${_dueTime!.minute.toString().padLeft(2,'0')}'
+                            : 'Hora',
+                        style: GoogleFonts.sora(fontSize: 14,
+                            color: _dueTime != null ? Colors.white : const Color(0xFF4B5563)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
