@@ -34,6 +34,8 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
   final Set<int> _selectedDays = {0, 1, 2, 3, 4};
   TimeOfDay _notifTime = const TimeOfDay(hour: 8, minute: 0);
 
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 9, minute: 0);
   @override
   void dispose() {
     _titleCtrl.dispose();
@@ -62,6 +64,10 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
         'active': true,
         'notifHour': _notifTime.hour,
         'notifMinute': _notifTime.minute,
+        'startHour': _startTime.hour,
+        'startMinute': _startTime.minute,
+        'endHour': _endTime.hour,
+        'endMinute': _endTime.minute,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -103,6 +109,53 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
       margin: const EdgeInsets.all(16),
     ),
   );
+
+  Future<void> _pickStartTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF10B981),
+            surface: Color(0xFF0D1117),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() {
+        _startTime = picked;
+        // Auto-ajustar hora fin si es anterior a inicio
+        final startMinutes = picked.hour * 60 + picked.minute;
+        final endMinutes = _endTime.hour * 60 + _endTime.minute;
+        if (endMinutes <= startMinutes) {
+          _endTime = TimeOfDay(
+            hour: (picked.hour + 1) % 24,
+            minute: picked.minute,
+          );
+        }
+      });
+    }
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF10B981),
+            surface: Color(0xFF0D1117),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _endTime = picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -362,52 +415,6 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
     );
   }
 
-  Widget _buildTimePicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('HORA DE RECORDATORIO', style: GoogleFonts.sora(
-            fontSize: 11, fontWeight: FontWeight.w600,
-            color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
-        const Gap(8),
-        GestureDetector(
-          onTap: () async {
-            final picked = await showTimePicker(
-              context: context,
-              initialTime: _notifTime,
-              builder: (ctx, child) => Theme(
-                data: ThemeData.dark().copyWith(
-                  colorScheme: const ColorScheme.dark(
-                    primary: Color(0xFF10B981),
-                    surface: Color(0xFF0D1117),
-                  ),
-                ),
-                child: child!,
-              ),
-            );
-            if (picked != null) setState(() => _notifTime = picked);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4), width: 1.5),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.access_time_rounded, color: Color(0xFF10B981), size: 20),
-                const Gap(14),
-                Text(_notifTime.format(context),
-                    style: GoogleFonts.sora(fontSize: 15, color: Colors.white)),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildSaveButton() {
     return SizedBox(
       width: double.infinity,
@@ -431,6 +438,134 @@ class _AddHabitScreenState extends State<AddHabitScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTimePicker() {
+    final startStr = '${_startTime.hour.toString().padLeft(2,'0')}:${_startTime.minute.toString().padLeft(2,'0')}';
+    final endStr = '${_endTime.hour.toString().padLeft(2,'0')}:${_endTime.minute.toString().padLeft(2,'0')}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('HORARIO', style: GoogleFonts.sora(
+            fontSize: 11, fontWeight: FontWeight.w600,
+            color: const Color(0xFF9CA3AF), letterSpacing: 1.2)),
+        const Gap(8),
+        Row(
+          children: [
+            // Hora inicio
+            Expanded(
+              child: GestureDetector(
+                onTap: _pickStartTime,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.5), width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Inicio', style: GoogleFonts.sora(
+                          fontSize: 11, color: const Color(0xFF6B7280))),
+                      const Gap(4),
+                      Row(
+                        children: [
+                          const Icon(Icons.play_arrow_rounded,
+                              color: Color(0xFF10B981), size: 16),
+                          const Gap(6),
+                          Text(startStr, style: GoogleFonts.sora(
+                              fontSize: 16, fontWeight: FontWeight.w700,
+                              color: Colors.white)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Icon(Icons.arrow_forward_rounded,
+                  color: const Color(0xFF10B981).withOpacity(0.5), size: 20),
+            ),
+            // Hora fin
+            Expanded(
+              child: GestureDetector(
+                onTap: _pickEndTime,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Fin', style: GoogleFonts.sora(
+                          fontSize: 11, color: const Color(0xFF6B7280))),
+                      const Gap(4),
+                      Row(
+                        children: [
+                          const Icon(Icons.stop_rounded,
+                              color: Color(0xFF10B981), size: 16),
+                          const Gap(6),
+                          Text(endStr, style: GoogleFonts.sora(
+                              fontSize: 16, fontWeight: FontWeight.w700,
+                              color: Colors.white)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const Gap(8),
+        // Barra visual del horario
+        _buildTimeBar(startStr, endStr),
+      ],
+    );
+  }
+
+  Widget _buildTimeBar(String start, String end) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10B981).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: const Color(0xFF10B981).withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.schedule_rounded, color: Color(0xFF10B981), size: 16),
+          const Gap(8),
+          Text('$start — $end', style: GoogleFonts.sora(
+              fontSize: 13, fontWeight: FontWeight.w600,
+              color: const Color(0xFF10B981))),
+          const Spacer(),
+          Text(_durationLabel(), style: GoogleFonts.sora(
+              fontSize: 12, color: const Color(0xFF6B7280))),
+        ],
+      ),
+    );
+  }
+
+  String _durationLabel() {
+    final startMin = _startTime.hour * 60 + _startTime.minute;
+    final endMin = _endTime.hour * 60 + _endTime.minute;
+    final diff = endMin - startMin;
+    if (diff <= 0) return '';
+    if (diff < 60) return '${diff}min';
+    final h = diff ~/ 60;
+    final m = diff % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}min';
   }
 }
 

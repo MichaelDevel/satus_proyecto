@@ -1407,54 +1407,83 @@ class _HomeScreenState extends State<HomeScreen>
     final streak = data['streak'] ?? 0;
     final icon = data['icon'] ?? '💪';
     final frequency = data['frequency'] ?? 'Diario';
+    final startH = data['startHour'] as int?;
+    final startM = data['startMinute'] as int?;
+    final endH = data['endHour'] as int?;
+    final endM = data['endMinute'] as int?;
 
-    return
-      GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => HabitDetailScreen(habitId: id, data: data),
-          )),
-          child:
-        Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
-                ),
-                child: Center(child: Text(icon, style: const TextStyle(fontSize: 22))),
+    String timeRange = '';
+    if (startH != null && endH != null) {
+      final start = '${startH.toString().padLeft(2,'0')}:${(startM ?? 0).toString().padLeft(2,'0')}';
+      final end = '${endH.toString().padLeft(2,'0')}:${(endM ?? 0).toString().padLeft(2,'0')}';
+      timeRange = '$start — $end';
+    }
+
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => HabitDetailScreen(habitId: id, data: data))),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
               ),
-              const Gap(14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(data['title'] ?? '', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-                    const Gap(3),
-                    Text(frequency, style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF6B7280))),
-                  ],
-                ),
-              ),
-              const Gap(8),
-              Column(
+              child: Center(child: Text(icon,
+                  style: const TextStyle(fontSize: 22))),
+            ),
+            const Gap(14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$streak', style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700, color: const Color(0xFF10B981))),
-                  Text('racha', style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF6B7280))),
+                  Text(data['title'] ?? '', style: GoogleFonts.sora(
+                      fontSize: 15, fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+                  const Gap(3),
+                  // Horario si existe
+                  if (timeRange.isNotEmpty)
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule_rounded,
+                            color: Color(0xFF10B981), size: 13),
+                        const Gap(4),
+                        Text(timeRange, style: GoogleFonts.sora(
+                            fontSize: 12, fontWeight: FontWeight.w600,
+                            color: const Color(0xFF10B981))),
+                      ],
+                    )
+                  else
+                    Text(frequency, style: GoogleFonts.sora(
+                        fontSize: 12, color: const Color(0xFF6B7280))),
                 ],
               ),
-            ],
-          ),
+            ),
+            const Gap(8),
+            Column(
+              children: [
+                Text('$streak', style: GoogleFonts.sora(
+                    fontSize: 20, fontWeight: FontWeight.w700,
+                    color: const Color(0xFF10B981))),
+                Text('racha', style: GoogleFonts.sora(
+                    fontSize: 10, color: const Color(0xFF6B7280))),
+              ],
+            ),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildReminderItem(Map<String, dynamic> data, String id) {

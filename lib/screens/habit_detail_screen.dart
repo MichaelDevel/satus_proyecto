@@ -33,6 +33,9 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
   final List<String> _icons = ['💪', '📚', '🏃', '💧', '🧘', '🍎', '😴', '✍️', '🎯', '🧠', '🎵', '🌿'];
   final List<String> _days = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
+  late TimeOfDay _startTime;
+  late TimeOfDay _endTime;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,14 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
     _selectedIcon = widget.data['icon'] ?? '💪';
     final rawDays = widget.data['days'];
     _selectedDays = rawDays != null ? Set<int>.from(rawDays) : {0, 1, 2, 3, 4};
+    _startTime = TimeOfDay(
+      hour: widget.data['startHour'] as int? ?? widget.data['notifHour'] as int? ?? 8,
+      minute: widget.data['startMinute'] as int? ?? widget.data['notifMinute'] as int? ?? 0,
+    );
+    _endTime = TimeOfDay(
+      hour: widget.data['endHour'] as int? ?? 9,
+      minute: widget.data['endMinute'] as int? ?? 0,
+    );
   }
 
   @override
@@ -66,6 +77,12 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
         'frequency': _frequency,
         'icon': _selectedIcon,
         'days': _selectedDays.toList()..sort(),
+        'notifHour': _startTime.hour,
+        'notifMinute': _startTime.minute,
+        'startHour': _startTime.hour,
+        'startMinute': _startTime.minute,
+        'endHour': _endTime.hour,
+        'endMinute': _endTime.minute,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (mounted) {
@@ -168,6 +185,30 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
     margin: const EdgeInsets.all(16),
   ));
 
+  Future<void> _pickStartTime() async {
+    final picked = await showTimePicker(
+      context: context, initialTime: _startTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF10B981), surface: Color(0xFF0D1117))),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(
+      context: context, initialTime: _endTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(
+            primary: Color(0xFF10B981), surface: Color(0xFF0D1117))),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _endTime = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -218,6 +259,8 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
                               const Gap(16),
                               if (_frequency != 'Mensual') _buildDaySelector().animate().fadeIn(delay: 500.ms),
                               const Gap(32),
+                              _buildTimeRangeSelector().animate().fadeIn(delay: 550.ms),
+                              const Gap(32),
                               _buildActions(doneToday, completedDates).animate().fadeIn(delay: 600.ms),
                               const Gap(24),
                             ],
@@ -232,6 +275,104 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTimeRangeSelector() {
+    final startStr = '${_startTime.hour.toString().padLeft(2,'0')}:${_startTime.minute.toString().padLeft(2,'0')}';
+    final endStr = '${_endTime.hour.toString().padLeft(2,'0')}:${_endTime.minute.toString().padLeft(2,'0')}';
+    final startMin = _startTime.hour * 60 + _startTime.minute;
+    final endMin = _endTime.hour * 60 + _endTime.minute;
+    final diff = endMin - startMin;
+    final duration = diff <= 0 ? '' : diff < 60 ? '${diff}min' : '${diff ~/ 60}h ${diff % 60 == 0 ? '' : '${diff % 60}min'}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('HORARIO', style: GoogleFonts.sora(fontSize: 11,
+            fontWeight: FontWeight.w600, color: const Color(0xFF9CA3AF),
+            letterSpacing: 1.2)),
+        const Gap(10),
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: _editing ? _pickStartTime : null,
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.5), width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Inicio', style: GoogleFonts.sora(
+                          fontSize: 11, color: const Color(0xFF6B7280))),
+                      const Gap(4),
+                      Text(startStr, style: GoogleFonts.sora(
+                          fontSize: 18, fontWeight: FontWeight.w700,
+                          color: const Color(0xFF10B981))),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Icon(Icons.arrow_forward_rounded,
+                  color: Color(0xFF10B981), size: 18),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: _editing ? _pickEndTime : null,
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Fin', style: GoogleFonts.sora(
+                          fontSize: 11, color: const Color(0xFF6B7280))),
+                      const Gap(4),
+                      Text(endStr, style: GoogleFonts.sora(
+                          fontSize: 18, fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (duration.isNotEmpty) ...[
+          const Gap(8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.timelapse_rounded,
+                    color: Color(0xFF10B981), size: 14),
+                const Gap(6),
+                Text('Duración: $duration', style: GoogleFonts.sora(
+                    fontSize: 12, color: const Color(0xFF10B981))),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
