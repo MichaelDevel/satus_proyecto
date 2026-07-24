@@ -23,6 +23,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -57,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen>
   final AudioPlayer _audioPlayer = AudioPlayer();
   final FlutterTts _tts = FlutterTts();
 
+  final MethodChannel _widgetChannel = const MethodChannel('com.example.satus_proyecto/widget');
   int _selectedTab = 0;
   // ── Estado del calendario ─────────────────────────────────────────────────────
   DateTime _selectedDay = DateTime.now();
@@ -71,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen>
     _initSpeech();
     _initTts();
     _updateHabitStreaks();
+    _updateHomeWidget();
     NotificationService().rescheduleAll();
     PersistentNotificationService().start();
     FlutterForegroundTask.addTaskDataCallback(_onForegroundData);
@@ -146,6 +149,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (state == AppLifecycleState.resumed) {
       await _checkPendingListen();
+      await _updateHomeWidget();
     }
   }
 
@@ -797,6 +801,59 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (e) {
       _playErrorSound();
       _endFlow('❌ Error al crear el recordatorio.');
+    }
+  }
+
+  Future<void> _updateHomeWidget() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final now = DateTime.now();
+    final nowMin = now.hour * 60 + now.minute;
+    final todayWeekday = now.weekday - 1;
+    final prefs = await SharedPreferences.getInstance();
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('habits')
+          .where('active', isEqualTo: true).get();
+
+      final habits = snap.docs.where((d) {
+        final days = List<int>.from(d.data()['days'] ?? [0,1,2,3,4,5,6]);
+        return days.contains(todayWeekday);
+      }).toList()
+        ..sort((a, b) => (a.data()['startHour'] as int? ?? 0)
+            .compareTo(b.data()['startHour'] as int? ?? 0));
+
+      final timeStr = '${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}';
+      await prefs.setString('current_time', timeStr);
+      await prefs.setInt('habit_count', habits.length > 3 ? 3 : habits.length);
+
+      print('📦 habit_count guardado: ${prefs.getInt('habit_count')}');
+      print('📦 current_time guardado: ${prefs.getString('current_time')}');
+      print('📦 habit_title_1 guardado: ${prefs.getString('habit_title_1')}');
+
+      for (int i = 0; i < habits.length && i < 3; i++) {
+        final data = habits[i].data();
+        final startH = data['startHour'] as int? ?? 0;
+        final startM = data['startMinute'] as int? ?? 0;
+        final endH   = data['endHour'] as int? ?? 0;
+        final endM   = data['endMinute'] as int? ?? 0;
+        final isActive = nowMin >= startH * 60 + startM && nowMin < endH * 60 + endM;
+        final n = i + 1;
+
+        await prefs.setString('habit_title_$n', '${data['icon'] ?? ''} ${data['title'] ?? ''}');
+        await prefs.setString('habit_start_$n', '${startH.toString().padLeft(2,'0')}:${startM.toString().padLeft(2,'0')}');
+        await prefs.setString('habit_end_$n',   '${endH.toString().padLeft(2,'0')}:${endM.toString().padLeft(2,'0')}');
+        await prefs.setBool('habit_active_$n', isActive);
+      }
+
+      print('📡 Llamando invokeMethod updateWidget...');
+      await _widgetChannel.invokeMethod('updateWidget');
+      print('📡 invokeMethod completado');
+      print('✅ Widget actualizado: ${habits.length} hábitos');
+    } catch (e) {
+      print('❌ Error widget: $e');
     }
   }
 

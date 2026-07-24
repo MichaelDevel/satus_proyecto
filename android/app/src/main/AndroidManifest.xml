@@ -41,6 +41,15 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/habits_widget_info" />
         </receiver>
+        <receiver android:name=".HabitWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="com.example.satus_proyecto.UPDATE_WIDGET"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/habit_widget_info"/>
+        </receiver>
 
         <activity
             android:name=".MainActivity"
