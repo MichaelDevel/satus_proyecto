@@ -82,6 +82,26 @@ class _HomeScreenState extends State<HomeScreen>
       await Future.delayed(const Duration(milliseconds: 1500));
       await _checkPendingListen();
     });
+    _widgetChannel.setMethodCallHandler((call) async {
+      if (call.method == 'openHabit') {
+        final habitId = call.arguments as String;
+        // Buscar el hábito en Firestore y navegar
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.user.uid)
+            .collection('habits')
+            .doc(habitId)
+            .get();
+        if (snap.exists && mounted) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => HabitDetailScreen(
+              habitId: habitId,
+              data: snap.data()!,
+            ),
+          ));
+        }
+      }
+    });
   }
   // ── Inicializaciones ─────────────────────────────────────────────────────
   Future<void> _initSpeech() async {
@@ -827,25 +847,48 @@ class _HomeScreenState extends State<HomeScreen>
 
       final timeStr = '${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}';
       await prefs.setString('current_time', timeStr);
-      await prefs.setInt('habit_count', habits.length > 3 ? 3 : habits.length);
 
       print('📦 habit_count guardado: ${prefs.getInt('habit_count')}');
       print('📦 current_time guardado: ${prefs.getString('current_time')}');
       print('📦 habit_title_1 guardado: ${prefs.getString('habit_title_1')}');
 
-      for (int i = 0; i < habits.length && i < 3; i++) {
-        final data = habits[i].data();
+      // Separar activos y próximos — FUERA del loop
+      final active = habits.where((d) {
+        final data = d.data();
         final startH = data['startHour'] as int? ?? 0;
         final startM = data['startMinute'] as int? ?? 0;
-        final endH   = data['endHour'] as int? ?? 0;
-        final endM   = data['endMinute'] as int? ?? 0;
+        final endH = data['endHour'] as int? ?? 23;
+        final endM = data['endMinute'] as int? ?? 59;
+        return nowMin >= startH * 60 + startM && nowMin < endH * 60 + endM;
+      }).toList();
+
+      final upcoming = habits.where((d) {
+        final data = d.data();
+        final startH = data['startHour'] as int? ?? 0;
+        final startM = data['startMinute'] as int? ?? 0;
+        return startH * 60 + startM > nowMin;
+      }).toList();
+
+      final sorted = [...active, ...upcoming];
+
+      await prefs.setInt('habit_count', sorted.length > 2 ? 2 : sorted.length);
+
+// Loop usa sorted
+      for (int i = 0; i < sorted.length && i < 2; i++) {
+        final data = sorted[i].data();
+        final startH = data['startHour'] as int? ?? 0;
+        final startM = data['startMinute'] as int? ?? 0;
+        final endH = data['endHour'] as int? ?? 23;
+        final endM = data['endMinute'] as int? ?? 59;
         final isActive = nowMin >= startH * 60 + startM && nowMin < endH * 60 + endM;
         final n = i + 1;
 
+        await prefs.setString('habit_id_$n', sorted[i].id);
         await prefs.setString('habit_title_$n', '${data['icon'] ?? ''} ${data['title'] ?? ''}');
         await prefs.setString('habit_start_$n', '${startH.toString().padLeft(2,'0')}:${startM.toString().padLeft(2,'0')}');
-        await prefs.setString('habit_end_$n',   '${endH.toString().padLeft(2,'0')}:${endM.toString().padLeft(2,'0')}');
+        await prefs.setString('habit_end_$n', '${endH.toString().padLeft(2,'0')}:${endM.toString().padLeft(2,'0')}');
         await prefs.setBool('habit_active_$n', isActive);
+
       }
 
       print('📡 Llamando invokeMethod updateWidget...');
@@ -1464,17 +1507,10 @@ class _HomeScreenState extends State<HomeScreen>
     final streak = data['streak'] ?? 0;
     final icon = data['icon'] ?? '💪';
     final frequency = data['frequency'] ?? 'Diario';
-    final startH = data['startHour'] as int?;
-    final startM = data['startMinute'] as int?;
-    final endH = data['endHour'] as int?;
-    final endM = data['endMinute'] as int?;
-
-    String timeRange = '';
-    if (startH != null && endH != null) {
-      final start = '${startH.toString().padLeft(2,'0')}:${(startM ?? 0).toString().padLeft(2,'0')}';
-      final end = '${endH.toString().padLeft(2,'0')}:${(endM ?? 0).toString().padLeft(2,'0')}';
-      timeRange = '$start — $end';
-    }
+    final today = DateTime.now();
+    final todayStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
+    final completedDates = List.from(data['completedDates'] ?? []);
+    final isDone = completedDates.contains(todayStr);
 
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -1485,7 +1521,12 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: _surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+          border: Border.all(
+            color: isDone
+                ? const Color(0xFF10B981).withOpacity(0.3)
+                : const Color(0xFF1F2937),
+            width: 1.5,
+          ),
         ),
         child: Row(
           children: [
@@ -1494,11 +1535,9 @@ class _HomeScreenState extends State<HomeScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFF10B981).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
+                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5),
               ),
-              child: Center(child: Text(icon,
-                  style: const TextStyle(fontSize: 22))),
+              child: Center(child: Text(icon, style: const TextStyle(fontSize: 22))),
             ),
             const Gap(14),
             Expanded(
@@ -1507,23 +1546,11 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   Text(data['title'] ?? '', style: GoogleFonts.sora(
                       fontSize: 15, fontWeight: FontWeight.w600,
-                      color: Colors.white)),
+                      color: isDone ? const Color(0xFF6B7280) : Colors.white,
+                      decoration: isDone ? TextDecoration.lineThrough : null)),
                   const Gap(3),
-                  // Horario si existe
-                  if (timeRange.isNotEmpty)
-                    Row(
-                      children: [
-                        const Icon(Icons.schedule_rounded,
-                            color: Color(0xFF10B981), size: 13),
-                        const Gap(4),
-                        Text(timeRange, style: GoogleFonts.sora(
-                            fontSize: 12, fontWeight: FontWeight.w600,
-                            color: const Color(0xFF10B981))),
-                      ],
-                    )
-                  else
-                    Text(frequency, style: GoogleFonts.sora(
-                        fontSize: 12, color: const Color(0xFF6B7280))),
+                  Text(frequency, style: GoogleFonts.sora(
+                      fontSize: 12, color: const Color(0xFF6B7280))),
                 ],
               ),
             ),
@@ -1536,6 +1563,38 @@ class _HomeScreenState extends State<HomeScreen>
                 Text('racha', style: GoogleFonts.sora(
                     fontSize: 10, color: const Color(0xFF6B7280))),
               ],
+            ),
+            const Gap(12),
+            // ← Botón check
+            GestureDetector(
+              onTap: () async {
+                final List dates = List.from(data['completedDates'] ?? []);
+                if (isDone) {
+                  dates.remove(todayStr);
+                } else {
+                  dates.add(todayStr);
+                }
+                final streak = _calculateStreak(dates);
+                await FirebaseFirestore.instance
+                    .collection('users').doc(widget.user.uid)
+                    .collection('habits').doc(id)
+                    .update({'completedDates': dates, 'streak': streak});
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: isDone ? const Color(0xFF10B981) : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDone ? const Color(0xFF10B981) : const Color(0xFF4B5563),
+                    width: 1.5,
+                  ),
+                ),
+                child: isDone
+                    ? const Icon(Icons.check_rounded, color: Colors.white, size: 16)
+                    : null,
+              ),
             ),
           ],
         ),
@@ -2162,6 +2221,63 @@ class _HomeScreenState extends State<HomeScreen>
     return _CollapsibleSection(label: label, color: color, children: children);
   }
 
+  Widget _buildFullList({
+    required String collection,
+    required Color color,
+    required IconData icon,
+    required String emptyMsg,
+    required Widget Function(Map<String, dynamic>, String) itemBuilder,
+    bool Function(Map<String, dynamic>)? filter,
+  }) {
+    final uid = widget.user.uid;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users').doc(uid).collection(collection)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Center(child: SizedBox(
+            width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          ));
+        }
+        var docs = snap.data?.docs ?? [];
+        if (filter != null) {
+          docs = docs.where((d) => filter(d.data() as Map<String, dynamic>)).toList();
+        }
+        if (docs.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF1F2937), width: 1.5),
+            ),
+            child: Center(child: Text(emptyMsg,
+                style: GoogleFonts.sora(color: const Color(0xFF4B5563), fontSize: 13))),
+          );
+        }
+        return Column(
+          children: docs.map((d) =>
+              itemBuilder(d.data() as Map<String, dynamic>, d.id)).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _sectionLabel(String label) {
+    return Text(
+      label,
+      style: GoogleFonts.sora(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: const Color(0xFF6B7280),
+        letterSpacing: 1.1,
+      ),
+    );
+  }
+
   Widget _buildHomeContent() {
     final displayName = widget.user.email?.split('@').first ?? 'Usuario';
     return SingleChildScrollView(
@@ -2172,8 +2288,38 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           const Gap(32),
           _buildGreeting(displayName),
+          const Gap(28),
+          _sectionLabel('TAREAS PENDIENTES'),
+          const Gap(12),
+          _buildFullList(
+            collection: 'tasks',
+            color: const Color(0xFF6366F1),
+            icon: Icons.check_circle_outline_rounded,
+            emptyMsg: 'Sin tareas pendientes',
+            itemBuilder: _buildTaskItem,
+            filter: (data) => data['completed'] != true,
+          ),
           const Gap(24),
-          _buildActiveHabitsWidget(),
+          _sectionLabel('HÁBITOS'),
+          const Gap(12),
+          _buildFullList(
+            collection: 'habits',
+            color: const Color(0xFF10B981),
+            icon: Icons.loop_rounded,
+            emptyMsg: 'Sin hábitos',
+            itemBuilder: _buildHabitItem,
+          ),
+          const Gap(24),
+          _sectionLabel('RECORDATORIOS'),
+          const Gap(12),
+          _buildFullList(
+            collection: 'reminders',
+            color: const Color(0xFFF59E0B),
+            icon: Icons.notifications_none_rounded,
+            emptyMsg: 'Sin recordatorios',
+            itemBuilder: _buildReminderItem,
+            filter: (data) => data['active'] == true,
+          ),
           const Gap(12),
           _buildSectionLabel('¿Qué quieres hacer?'),
           const Gap(20),

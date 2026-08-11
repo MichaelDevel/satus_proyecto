@@ -24,4 +24,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
     }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val habitId = intent.getStringExtra("habit_id")
+        if (habitId != null) {
+            // Enviar el ID a Flutter via MethodChannel
+            MethodChannel(flutterEngine!!.dartExecutor.binaryMessenger, CHANNEL)
+                .invokeMethod("openHabit", habitId)
+        }
+    }
 }

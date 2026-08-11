@@ -45,6 +45,9 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
                 <action android:name="com.example.satus_proyecto.UPDATE_WIDGET"/>
+                <action android:name="com.example.satus_proyecto.REFRESH_WIDGET"/>
+                <action android:name="com.example.satus_proyecto.CHECK_HABIT"/>
+                <action android:name="com.example.satus_proyecto.RESTORE_WIDGET"/>
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
