@@ -17,7 +17,7 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await NotificationService().init();
-  PersistentNotificationService().init();
+  //PersistentNotificationService().init();
   await Workmanager().initialize(
     callbackDispatcher,
     isInDebugMode: false,

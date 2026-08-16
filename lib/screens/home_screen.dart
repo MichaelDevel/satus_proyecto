@@ -74,8 +74,9 @@ class _HomeScreenState extends State<HomeScreen>
     _initTts();
     _updateHabitStreaks();
     _updateHomeWidget();
+    NotificationService().testZonedSchedule();
     NotificationService().rescheduleAll();
-    PersistentNotificationService().start();
+    //PersistentNotificationService().start();
     FlutterForegroundTask.addTaskDataCallback(_onForegroundData);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -102,6 +103,8 @@ class _HomeScreenState extends State<HomeScreen>
         }
       }
     });
+    // Limpiar todas las tareas viejas y reprogramar
+    _cleanAndReschedule();
   }
   // ── Inicializaciones ─────────────────────────────────────────────────────
   Future<void> _initSpeech() async {
@@ -133,6 +136,11 @@ class _HomeScreenState extends State<HomeScreen>
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted && !_isListening) _toggleListening();
     }
+  }
+
+  Future<void> _cleanAndReschedule() async {
+    await Workmanager().cancelAll();
+    await NotificationService().rescheduleAll();
   }
 
   Future<void> _initTts() async {

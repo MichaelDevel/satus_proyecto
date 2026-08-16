@@ -254,11 +254,13 @@ class NotificationService {
     print('   Hora: $hour:$minute');
     print('   Primera notif: $scheduledTime');
     print('   Delay: ${scheduledTime.difference(now).inMinutes} minutos');
+
+    final testDelay = const Duration(minutes: 1);
     await Workmanager().registerPeriodicTask(
       'habit_$id',
       'send_notification',
       frequency: const Duration(hours: 24),
-      initialDelay: scheduledTime.difference(now),
+      initialDelay: testDelay,
       inputData: {
         'id': id,
         'title': '$icon Hábito pendiente',
@@ -358,6 +360,34 @@ class NotificationService {
     await cancelAllUserNotifications();
     await rescheduleAll();
     print('🔄 Notificaciones reprogramadas para usuario: $uid');
+  }
+
+  Future<void> testZonedSchedule() async {
+    await init();
+    final scheduledDate = tz.TZDateTime.now(tz.local).add(const Duration(seconds: 15));
+
+    print('⏰ Prueba zonedSchedule para: $scheduledDate');
+    print('   Zona horaria: ${tz.local.name}');
+    print('   Ahora: ${tz.TZDateTime.now(tz.local)}');
+
+    await _plugin.zonedSchedule(
+      997,
+      '🧪 Prueba',
+      'zonedSchedule funciona ✅',
+      scheduledDate,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'reminders_channel',
+          'Recordatorios',
+          importance: Importance.max,
+          priority: Priority.max,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.alarmClock,
+      uiLocalNotificationDateInterpretation:
+      UILocalNotificationDateInterpretation.absoluteTime,
+    );
+    print('✅ zonedSchedule registrado');
   }
 
   // ── Generar ID desde doc ID de Firestore ──────────────────────────────────
