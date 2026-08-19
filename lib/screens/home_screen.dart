@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class HomeScreen extends StatefulWidget {
   final User user;
@@ -74,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen>
     _initTts();
     _updateHabitStreaks();
     _updateHomeWidget();
+    _saveFcmToken();
     NotificationService().testZonedSchedule();
     NotificationService().rescheduleAll();
     //PersistentNotificationService().start();
@@ -141,6 +143,17 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _cleanAndReschedule() async {
     await Workmanager().cancelAll();
     await NotificationService().rescheduleAll();
+  }
+
+  Future<void> _saveFcmToken() async {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.user.uid)
+          .update({'fcmToken': token});
+      print('📱 FCM Token: $token');
+    }
   }
 
   Future<void> _initTts() async {

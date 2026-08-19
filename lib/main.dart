@@ -10,12 +10,19 @@ import 'package:workmanager/workmanager.dart';
 import 'services/work_notification_service.dart';
 import 'services/foreground_service.dart';
 import 'services/persistent_notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+}
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // ← obligatorio antes de Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await FirebaseMessaging.instance.requestPermission();
+
   await NotificationService().init();
   //PersistentNotificationService().init();
   await Workmanager().initialize(
