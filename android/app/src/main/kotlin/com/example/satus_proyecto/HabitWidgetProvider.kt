@@ -164,7 +164,15 @@ class HabitWidgetProvider : AppWidgetProvider() {
                             context, 200 + n, openIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                         )
+                        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        }
+                        val openAppPending = PendingIntent.getActivity(
+                            context, 300, openAppIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
                         views.setOnClickPendingIntent(titleIds[i], openPending)
+                        views.setOnClickPendingIntent(android.R.id.content, openAppPending)
                     }
                 }
             }
